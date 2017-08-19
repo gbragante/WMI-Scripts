@@ -1,0 +1,25 @@
+logman create trace "wmi-trace" -ow -o %0\..\wmi-trace-%COMPUTERNAME%.etl -p "Microsoft-Windows-WMI" 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets
+
+@rem WMI-Activity
+logman update trace "wmi-trace" -p {1418EF04-B0B4-4623-BF7E-D74AB47BBDAA} 0xffffffffffffffff 0xff -ets
+
+@rem Microsoft-Windows-WMIAdapter
+logman update trace "wmi-trace" -p {2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F} 0xffffffffffffffff 0xff -ets
+
+@rem WMI_Tracing
+logman update trace "wmi-trace" -p {1FF6B227-2CA7-40F9-9A66-980EADAA602E} 0xffffffffffffffff 0xff -ets
+
+@rem WMI_Tracing_Client_Operations_Info_Guid
+logman update trace "wmi-trace" -p {8E6B6962-AB54-4335-8229-3255B919DD0E} 0xffffffffffffffff 0xff -ets
+
+@echo off
+echo
+ECHO Reproduce your issue and enter any key to stop tracing
+@echo on
+pause
+logman stop "wmi-trace" -ets
+tasklist /svc > %0\..\tasklist-%COMPUTERNAME%.txt
+ 
+@echo off
+echo Tracing has been captured, WMI-Trace.etl and tasklist.txt saved.
+pause
