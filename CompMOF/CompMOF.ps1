@@ -1,4 +1,4 @@
-$version = "CompMOF (20170529)"
+$version = "CompMOF (20170825)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -37,16 +37,20 @@ if ($mof.length -eq 0) {
 }
 
 foreach ($line in $mof) {
-  $line = $line.Replace("%windir%", $env:windir) 
-  $line = $line.Replace("%ProgramFiles%", $env:ProgramFiles) 
-  if ($line -gt "") {
-    if (Test-path $line) {
-      Write-Log ("Compiling " + $line)
-      $cmd = "mofcomp """ + $line + """"+ $RdrErr
-      Write-Log $cmd
-      Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
-    } else {
-      Write-Log ("Missing file " + $line)
+  if ($line.ToLower().contains("uninstall")) {
+    Write-Log ("Skipping " + $line) 
+  } else {
+    $line = $line.Replace("%windir%", $env:windir) 
+    $line = $line.Replace("%ProgramFiles%", $env:ProgramFiles) 
+    if ($line -gt "") {
+      if (Test-path $line) {
+        Write-Log ("Compiling " + $line)
+        $cmd = "mofcomp """ + $line + """"+ $RdrErr
+        Write-Log $cmd
+        Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+      } else {
+        Write-Log ("Missing file " + $line)
+      }
     }
   }
 }
