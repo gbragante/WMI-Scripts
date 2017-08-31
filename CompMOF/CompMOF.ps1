@@ -1,4 +1,4 @@
-$version = "CompMOF (20170825)"
+$version = "CompMOF (20170831)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -13,6 +13,7 @@ $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myW
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
 if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
   Write-Output "This script needs to be run as Administrator"
+  exit
 }
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
@@ -35,6 +36,8 @@ if ($mof.length -eq 0) {
   Write-Log ("The registry key ""HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM\Autorecover MOFs"" is missing or empty")
   exit
 }
+
+$mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
 foreach ($line in $mof) {
   if ($line.ToLower().contains("uninstall")) {
