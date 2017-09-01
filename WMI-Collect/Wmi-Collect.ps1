@@ -1,6 +1,5 @@
-$version = "WMI-Collect (20170518)"
+$version = "WMI-Collect (20170901)"
 # by Gianni Bragante - gbrag@microsoft.com
-# Find the latest version here https://microsoft.sharepoint.com/teams/WMI_Troubleshooting/SitePages/Home.aspx
 
 Function Write-Log {
   param( [string] $msg )
@@ -44,6 +43,10 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
 } else {
   $procdump = "procdump.exe"
 }
+if (-not (Test-Path ($root + "\" + $procdump))) {
+  $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
+  if ($confirm.ToLower() -ne "y") {exit}
+}
 
 New-Item -itemtype directory -path $resDir | Out-Null
 
@@ -65,6 +68,24 @@ if (($list | measure).count -gt 0) {
   }
 } else {
   Write-Log "No WMIPrvSE.exe processes found"
+}
+
+Write-Log "Collecting Autorecover MOFs content"
+$mof = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM")).'Autorecover MOFs'
+if ($mof.length -eq 0) {
+  Write-Log ("The registry key ""HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM\Autorecover MOFs"" is missing or empty")
+  exit
+}
+$mof | Out-File ($resDir + "\Autorecover MOFs.txt")
+
+Write-Log "Collecting quota details"
+$quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
+if ($quota) {
+  ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
+  ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
+  ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
+  ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
+  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt") -Append
 }
 
 Write-Log "Collecting details of provider hosts"
@@ -147,6 +168,11 @@ Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
+
+Write-Log "Exporting ipconfig /all output"
+$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
