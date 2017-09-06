@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20170901)"
+$version = "WMI-Collect (20170906)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -168,6 +168,11 @@ Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
+
+Write-Log "Exporting netstat output"
+$cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
