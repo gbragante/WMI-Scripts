@@ -1,4 +1,4 @@
-# WMI-Report (20170829)
+# WMI-Report (20170921)
 # by Gianni Bragante gbrag@microsoft.com
 
 Function Get-WMINamespace($ns) {
@@ -68,13 +68,12 @@ Function Get-ProvDetails($ns, $name, $clsid, $HostingModel) {
   if ($clsid -ne $null) {
     if (-not ($HostingModel -match "decoupled") -and ($HostingModel -ne "SelfHost")) {
       $name = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid)).'(default)'
-      if ($name.length -gt 0 ) { 
-        # Write-Log ("  " + (get-itemproperty -literalpath ("HKCR:\CLSID\" + $clsid)).'(default)')
-      }
       $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)'
       if ($dll) {
-        $row.dtDLL = (Get-Item $dll).CreationTime
-        $row.verDLL = (Get-Item $dll).VersionInfo.FileVersion
+        $dll = $dll.Replace("""","")
+        $file = Get-Item ($dll)
+        $row.dtDLL = $file.CreationTime
+        $row.verDLL = $file.VersionInfo.FileVersion
       }
       $row.ThreadingModel = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'ThreadingModel'
     }
