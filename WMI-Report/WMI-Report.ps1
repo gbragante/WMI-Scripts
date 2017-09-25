@@ -1,4 +1,4 @@
-# WMI-Report (20170921)
+# WMI-Report (20170925)
 # by Gianni Bragante gbrag@microsoft.com
 
 Function Get-WMINamespace($ns) {
@@ -65,10 +65,29 @@ Function Get-ProvDetails($ns, $name, $clsid, $HostingModel) {
   $row.HostingModel = $HostingModel
   $row.CLSID= $clsid
   $dll = " "
+
   if ($clsid -ne $null) {
-    if (-not ($HostingModel -match "decoupled") -and ($HostingModel -ne "SelfHost")) {
+    if ($HostingModel -match "decoupled") {
+      $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
+      $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
+      ForEach ($key in $Items) {
+        if ($key.Provider -eq $name) {
+          $key.ProcessIdentifier
+          $proc = Get-WmiObject -Query ("select ExecutablePath from Win32_Process where ProcessId = " +  $key.ProcessIdentifier)
+          $exe = get-item ($proc.ExecutablePath)
+          $row.DLL = $proc.ExecutablePath
+          $row.dtDLL = $exe.CreationTime
+          $row.verDLL = $exe.VersionInfo.FileVersion
+          $svc = Get-WmiObject -Query ("select Name from Win32_Service where ProcessId = " +  $key.ProcessIdentifier)
+          if ($svc) {
+            $row.ThreadingModel = ("Service: " + $svc.Name)
+          }
+        }
+      }
+    } elseif ($HostingModel -ne "SelfHost") {
       $name = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid)).'(default)'
       $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)'
+      $row.DLL= $dll
       if ($dll) {
         $dll = $dll.Replace("""","")
         $file = Get-Item ($dll)
@@ -78,7 +97,6 @@ Function Get-ProvDetails($ns, $name, $clsid, $HostingModel) {
       $row.ThreadingModel = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'ThreadingModel'
     }
   }
-  $row.DLL= $dll
   $tbProv.Rows.Add($row)
 }
 
@@ -146,11 +164,6 @@ Function Get-WmiNamespaceSecurity {
         $row.Security = $res.Substring(0, $res.Length -3)
         $tbSec.Rows.Add($row)
     }
-}
-
-function Write-Log($line) {
-  Write-Host $line
-  Out-File -Filepath $resDir"\WMI-Report.txt" -encoding default -InputObject $line -Append
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
