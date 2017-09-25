@@ -1,4 +1,4 @@
-$version = "Perf-Collect (20170627)"
+$version = "Perf-Collect (20170925)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -25,6 +25,8 @@ Function ExecQuery {
 
 $tbPerfV1 = New-Object system.Data.DataTable “Perf”
 $col = New-Object system.Data.DataColumn Name,([string])
+$tbPerfV1.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Open,([string])
 $tbPerfV1.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Close,([string])
 $tbPerfV1.Columns.Add($col)
@@ -126,6 +128,7 @@ ForEach ($Item in $Keys) {
     }
 
     $row.Name = $item.PSChildName
+    $row.Open = $reg.Open
     $row.Close = $reg.Close
     $row.Collect = $reg.Collect
     $row.Library = $reg.Library
@@ -143,12 +146,22 @@ ForEach ($Item in $Keys) {
 $tbPerfV1 | Export-Csv $resDir"\PerfV1.csv" -noType
 
 Write-Log "Enumerating performance counters"
-$cmd = "typeperf.exe -qx > """ + $resDir + "\typeperf.txt""" + $RdrErr
+$cmd = "typeperf.exe -q > """ + $resDir + "\typeperf.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Enumerating performance counters with instances"
+$cmd = "typeperf.exe -qx > """ + $resDir + "\typeperf-inst.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Enumerating 32bit performance counters"
-$cmd = $env:windir + "\SysWOW64\typeperf.exe -qx > """ + $resDir + "\typeperf32.txt""" + $RdrErr
+$cmd = $env:windir + "\SysWOW64\typeperf.exe -q > """ + $resDir + "\typeperf32.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Enumerating 32bit performance counters"
+$cmd = $env:windir + "\SysWOW64\typeperf.exe -qx > """ + $resDir + "\typeperf32-inst.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
