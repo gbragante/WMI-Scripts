@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20170920)"
+$version = "WMI-Collect (20171001)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -91,6 +91,9 @@ if ($quota) {
 Write-Log "Collecting details of provider hosts"
 New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
 
+"Coupled providers (WMIPrvSE.exe processes)" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+"" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+
 $prov = ExecQuery -NameSpace "root\cimv2" -Query "select HostProcessIdentifier, Provider, Namespace, User from MSFT_Providers"
 if ($prov) {
   $proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate from Win32_Process where name = 'wmiprvse.exe'"
@@ -121,6 +124,50 @@ if ($prov) {
   }
 }
 
+# Details of decoupled providers
+$list = Get-Process
+foreach ($proc in $list) {
+  $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
+  if (($prov | measure).count -gt 0) {
+    if (-not $hdr) {
+      "Decoupled providers" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      " " | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      $hdr = $true
+    }
+
+    $prc = ExecQuery -Namespace "root\cimv2" -Query ("select ProcessId, CreationDate, HandleCount, ThreadCount, PrivatePageCount, ExecutablePath from Win32_Process where ProcessId = " +  $proc.id)
+    if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+      $ut= New-TimeSpan -Start $prc.CreationDate
+    } else {
+      $ut= New-TimeSpan -Start $prc.ConvertToDateTime($prc.CreationDate)
+    }
+
+    $svc = ExecQuery -Namespace "root\cimv2" -Query ("select Name from Win32_Service where ProcessId = " +  $prc.ProcessId)
+    $svclist = ""
+    if ($svc) {
+      foreach ($item in $svc) {
+        $svclist = $svclist + $item.name + " "
+      }
+      $svc = " Service: " + $svclist
+    } else {
+      $svc = ""
+    }
+
+    ($prc.ExecutablePath + $svc) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+    "PID " + $prc.ProcessId + " Handles: " + $prc.HandleCount + " Threads: " + $prc.ThreadCount + " Private KB: " + ($prc.PrivatePageCount/1kb) + " Uptime: " + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+
+    $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
+    $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
+    ForEach ($key in $Items) {
+      if ($key.ProcessIdentifier -eq $prc.ProcessId) {
+        ($key.Scope + " " + $key.Provider) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      }
+    }
+    " " | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+  }
+}
+
+
 Write-Log "Collecing the dumps of decoupled WMI providers"
 $list = Get-Process
 if (($list | measure).count -gt 0) {
@@ -149,11 +196,8 @@ if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   }
 }
 
-Write-Log "Listing WMI repository files"
-Get-ChildItem $env:windir\system32\wbem\Repository | Format-Table -AutoSize -property name, @{N="Size";E={"{0:N0}" -f ($_.Length/1kb)};a="right"}, LastWriteTime | Out-File $resDir\repository.txt
-
 Write-Log "Listing WBEM folder"
-Get-ChildItem $env:windir\system32\wbem | Format-Table -AutoSize -property name, @{N="Size";E={"{0:N0}" -f ($_.Length/1kb)};a="right"}, LastWriteTime | Out-File $resDir\wbem.txt
+Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
@@ -178,6 +222,9 @@ Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Collecting the list of installed hotfixes"
+Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
