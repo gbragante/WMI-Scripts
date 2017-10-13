@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20171001)"
+$version = "WMI-Collect (20171013)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -70,6 +70,26 @@ if (($list | measure).count -gt 0) {
   Write-Log "No WMIPrvSE.exe processes found"
 }
 
+Write-Log "Collecing the dumps of decoupled WMI providers"
+$list = Get-Process
+if (($list | measure).count -gt 0) {
+  foreach ($proc in $list)
+  {
+    $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
+    if (($prov | measure).count -gt 0) {
+      Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
+      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\"+ $proc.name + ".exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+      Write-Log $cmd
+      Invoke-Expression $cmd
+    }
+  }
+}
+
+Write-Log "Collecting dump of the WmiApSrv.exe process"
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+
 Write-Log "Collecting Autorecover MOFs content"
 $mof = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM")).'Autorecover MOFs'
 if ($mof.length -eq 0) {
@@ -78,15 +98,107 @@ if ($mof.length -eq 0) {
 }
 $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
-Write-Log "Collecting quota details"
-$quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
-if ($quota) {
-  ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
-  ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
-  ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
-  ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
-  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt") -Append
+Write-Log "Listing WBEM folder"
+Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
+
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+Invoke-Expression $cmd
+
+Write-Log "Exporting Application log"
+$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+
+Write-Log "Exporting System log"
+$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+
+if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+  $actLog = Get-WinEvent -logname Microsoft-Windows-WMI-Activity/Operational -Oldest -ErrorAction Continue 2>>$errfile
+  if (($actLog  | measure).count -gt 0) {
+    Write-Log "Exporting WMI-Activity log"
+    $actLog | Out-String -width 1000 | Out-File -FilePath ($resDir + "\WMI-Activity.txt")
+  }
 }
+
+Write-Log "Exporting netstat output"
+$cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Exporting ipconfig /all output"
+$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Collecting details about running processes"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
+if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+  $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
+} else {
+  $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
+}
+
+if ($proc) {
+  $proc | Sort-Object Name |
+  Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
+  @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
+  @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
+  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
+  Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
+
+  Write-Log "Collecting services details"
+  $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
+
+  if ($svc) {
+    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
+    Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
+  }
+
+  Write-Log "Collecting system information"
+  $pad = 27
+  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles from Win32_OperatingSystem"
+  $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
+  $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
+  $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
+  $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
+
+  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
+  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+} else {
+  $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
+  $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
+  @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
+  @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
+  @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
+  Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+}
+
+Write-Log "Collecting the list of installed hotfixes"
+Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
 
 Write-Log "Collecting details of provider hosts"
 New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
@@ -167,125 +279,12 @@ foreach ($proc in $list) {
   }
 }
 
-
-Write-Log "Collecing the dumps of decoupled WMI providers"
-$list = Get-Process
-if (($list | measure).count -gt 0) {
-  foreach ($proc in $list)
-  {
-    $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
-    if (($prov | measure).count -gt 0) {
-      Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
-      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\"+ $proc.name + ".exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-      Write-Log $cmd
-      Invoke-Expression $cmd
-    }
-  }
-}
-
-Write-Log "Collecting dump of the WmiApSrv.exe process"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-
-if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-  $actLog = Get-WinEvent -logname Microsoft-Windows-WMI-Activity/Operational -Oldest -ErrorAction Continue 2>>$errfile
-  if (($actLog  | measure).count -gt 0) {
-    Write-Log "Exporting WMI-Activity log"
-    $actLog | Out-String -width 1000 | Out-File -FilePath ($resDir + "\WMI-Activity.txt")
-  }
-}
-
-Write-Log "Listing WBEM folder"
-Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
-
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
-$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
-Invoke-Expression $cmd
-
-Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-
-Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-
-Write-Log "Exporting netstat output"
-$cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
-
-Write-Log "Exporting ipconfig /all output"
-$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
-
-Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Out-File $resDir\hotfixes.txt
-
-Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
-if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-  $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
-} else {
-  $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
-}
-
-if ($proc) {
-  $proc | Sort-Object Name |
-  Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
-  @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
-  @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
-  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
-  Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
-
-  Write-Log "Collecting services details"
-  $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
-
-  if ($svc) {
-    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
-    Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
-  }
-
-  Write-Log "Collecting system information"
-  $pad = 27
-  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles from Win32_OperatingSystem"
-  $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
-  $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
-  $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
-  $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
-
-  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
-  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-} else {
-  $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
-  $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
-  @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
-  @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
-  @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
-  Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+Write-Log "Collecting quota details"
+$quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
+if ($quota) {
+  ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
+  ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
+  ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
+  ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
+  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt") -Append
 }
