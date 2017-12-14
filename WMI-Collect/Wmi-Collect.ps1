@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20171013)"
+$version = "WMI-Collect (20171130)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -112,6 +112,11 @@ Invoke-Expression $cmd
 
 Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+
+Write-Log "Exporting DSC log"
+$cmd = "wevtutil epl Microsoft-Windows-DSC/Operational """+ $resDir + "\" + $env:computername + "-DSC.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 
