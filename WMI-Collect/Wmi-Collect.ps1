@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20171130)"
+$version = "WMI-Collect (20171215)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -52,7 +52,7 @@ New-Item -itemtype directory -path $resDir | Out-Null
 
 Write-Log $version
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WinMgmt """ + $resDir + "\Svchost.exe-WinMgmt.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinMgmt """ + $resDir + "\Svchost.exe-WinMgmt.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 
@@ -62,7 +62,7 @@ if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found WMIPrvSE.exe with PID " + $proc.Id)
-    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\WMIPrvSE.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\WMIPrvSE.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
   }
@@ -78,7 +78,7 @@ if (($list | measure).count -gt 0) {
     $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
     if (($prov | measure).count -gt 0) {
       Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
-      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk " + $proc.Id + " """+ $resDir + "\"+ $proc.name + ".exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\"+ $proc.name + ".exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
       Write-Log $cmd
       Invoke-Expression $cmd
     }
@@ -86,7 +86,7 @@ if (($list | measure).count -gt 0) {
 }
 
 Write-Log "Collecting dump of the WmiApSrv.exe process"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma -mk WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 
@@ -224,7 +224,7 @@ if ($prov) {
       } else {
         $ut = New-TimeSpan -Start $prv.ConvertToDateTime($prv.CreationDate)
       }
-      "PID" + " " + $prv.ProcessId + " Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " Uptime:" + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))| Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      "PID" + " " + $prv.ProcessId + " (" + [String]::Format("{0:x}", $prv.ProcessId) + ") Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " Uptime:" + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))| Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
     } else {
       Write-Log ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
     }
@@ -271,7 +271,7 @@ foreach ($proc in $list) {
     }
 
     ($prc.ExecutablePath + $svc) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
-    "PID " + $prc.ProcessId + " Handles: " + $prc.HandleCount + " Threads: " + $prc.ThreadCount + " Private KB: " + ($prc.PrivatePageCount/1kb) + " Uptime: " + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+    "PID " + $prc.ProcessId  + " (" + [String]::Format("{0:x}", $prc.ProcessId) + ")  Handles: " + $prc.HandleCount + " Threads: " + $prc.ThreadCount + " Private KB: " + ($prc.PrivatePageCount/1kb) + " Uptime: " + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")) | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
 
     $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
     $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
