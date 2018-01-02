@@ -1,4 +1,4 @@
-# ListHosts.ps1 20170929
+# ListHosts.ps1 20180102
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function ExecQuery {
@@ -47,8 +47,12 @@ foreach ($prv in $proc) {
     $hm = $provdet.hostingmodel
     $clsid = $provdet.CLSID
     $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)'
+    $dll = $dll.Replace("""","")
+    $file = Get-Item ($dll)
+    $dtDLL = $file.CreationTime
+    $verDLL = $file.VersionInfo.FileVersion
 
-    Write-Host $provname.Namespace $provname.Provider $dll $hm $provname.user 
+    Write-Host $provname.Namespace $provname.Provider $dll $hm $provname.user $dtDLL $verDLL
   }
   Write-Host
 }
