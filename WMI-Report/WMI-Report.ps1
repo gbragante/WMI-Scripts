@@ -1,4 +1,4 @@
-# WMI-Report (20170925)
+# WMI-Report (20180102)
 # by Gianni Bragante gbrag@microsoft.com
 
 Function Get-WMINamespace($ns) {
@@ -17,7 +17,7 @@ Function Get-WMINamespace($ns) {
 Function Get-WMIProviders ($ns) {
   Get-WmiObject -NameSpace $ns -Class __Win32Provider | sort-object Name  |
   foreach {
-    Get-ProvDetails $ns $_.name $_.CLSID $_.HostingModel
+    Get-ProvDetails $ns $_.name $_.CLSID $_.HostingModel $_.UnloadTimeout
   }
 }
 
@@ -58,12 +58,13 @@ Function Get-Classes ($ns) {
   }
 }
 
-Function Get-ProvDetails($ns, $name, $clsid, $HostingModel) {
+Function Get-ProvDetails($ns, $name, $clsid, $HostingModel, $UnloadTimeout) {
   $row = $tbProv.NewRow()
   $row.NameSpace = $ns
   $row.Name = $name
   $row.HostingModel = $HostingModel
   $row.CLSID= $clsid
+  $row.UnloadTimeout = $UnloadTimeout
   $dll = " "
 
   if ($clsid -ne $null) {
@@ -197,6 +198,8 @@ $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn dtDLL,([string])
 $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn verDLL,([string])
+$tbProv.Columns.Add($col)
+$col = New-Object system.Data.DataColumn UnloadTimeout,([string])
 $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CLSID,([string])
 $tbProv.Columns.Add($col)
