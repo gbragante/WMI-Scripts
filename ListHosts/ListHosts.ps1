@@ -32,6 +32,8 @@ if (!$prov) {
 Write-host "Coupled providers (WMIPrvSE.exe processes)"
 Write-host ""
 
+$totMem = 0
+
 $proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate from Win32_Process where name = 'wmiprvse.exe'"
 foreach ($prv in $proc) {
   $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
@@ -42,6 +44,7 @@ foreach ($prv in $proc) {
   }
   
   Write-Host "PID"$prv.ProcessId "Handles:"$prv.HandleCount "Threads:"$prv.ThreadCount "Private KB:"($prv.PrivatePageCount/1kb) "Uptime:"($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+  $totMem = $totMem + $prv.PrivatePageCount
   foreach ($provname in $provhost) {
     $provdet = ExecQuery -NameSpace $provname.Namespace -Query ("select * from __Win32Provider where Name = """ + $provname.Provider + """")
     $hm = $provdet.hostingmodel
@@ -56,7 +59,10 @@ foreach ($prv in $proc) {
   }
   Write-Host
 }
+Write-Host "Total memory used by coupled providers:" ($totMem/1kb) "KB"
+Write-Host
 
+$hdr = $false
 $list = Get-Process
 foreach ($proc in $list) {
   $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
