@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180102)"
+$version = "WMI-Collect (20180103)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -100,6 +100,10 @@ $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
 Write-Log "Listing WBEM folder"
 Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
+
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole """+ $resDir + "\Ole.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
