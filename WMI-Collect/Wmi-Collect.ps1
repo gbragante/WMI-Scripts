@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180103)"
+$version = "WMI-Collect (20180116)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -220,10 +220,11 @@ New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction
 "Coupled providers (WMIPrvSE.exe processes)" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
 "" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
 
+$totMem = 0
+
 $prov = ExecQuery -NameSpace "root\cimv2" -Query "select HostProcessIdentifier, Provider, Namespace, User from MSFT_Providers"
 if ($prov) {
   $proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate from Win32_Process where name = 'wmiprvse.exe'"
-
   foreach ($prv in $proc) {
     $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
 
@@ -234,6 +235,7 @@ if ($prov) {
         $ut = New-TimeSpan -Start $prv.ConvertToDateTime($prv.CreationDate)
       }
       "PID" + " " + $prv.ProcessId + " (" + [String]::Format("{0:x}", $prv.ProcessId) + ") Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " Uptime:" + ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))| Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      $totMem = $totMem + $prv.PrivatePageCount
     } else {
       Write-Log ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
     }
@@ -243,12 +245,18 @@ if ($prov) {
       $hm = $provdet.hostingmodel
       $clsid = $provdet.CLSID
       $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)' 2>>$errfile
+      $dll = $dll.Replace("""","")
+      $file = Get-Item ($dll)
+      $dtDLL = $file.CreationTime
+      $verDLL = $file.VersionInfo.FileVersion
 
-      $provname.Namespace + " " + $provname.Provider + " " + $dll + " " + $hm + " " + $provname.user 2>>$errfile | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+      $provname.Namespace + " " + $provname.Provider + " " + $dll + " " + $hm + " " + $provname.user + " " + $dtDLL + " " + $verDLL 2>>$errfile | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
     }
     " " | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
   }
 }
+"Total memory used by coupled providers: " + ($totMem/1kb) + " KB" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
+" " | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
 
 # Details of decoupled providers
 $list = Get-Process
