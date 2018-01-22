@@ -1,4 +1,4 @@
-# ListHosts.ps1 20180102
+# ListHosts.ps1 20180122
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function ExecQuery {
@@ -34,7 +34,7 @@ Write-host ""
 
 $totMem = 0
 
-$proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate from Win32_Process where name = 'wmiprvse.exe'"
+$proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate, KernelModeTime, UserModeTime from Win32_Process where name = 'wmiprvse.exe'"
 foreach ($prv in $proc) {
   $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
   if ($PSVersionTable.psversion.ToString() -ge "3.0") {
@@ -43,7 +43,17 @@ foreach ($prv in $proc) {
     $ut= New-TimeSpan -Start $prv.ConvertToDateTime($prv.CreationDate)
   }
   
-  Write-Host "PID"$prv.ProcessId "Handles:"$prv.HandleCount "Threads:"$prv.ThreadCount "Private KB:"($prv.PrivatePageCount/1kb) "Uptime:"($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+  $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+
+  $ks = $prv.KernelModeTime / 10000000
+  $kt = [timespan]::fromseconds($ks)
+  $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
+
+  $us = $prv.UserModeTime / 10000000
+  $ut = [timespan]::fromseconds($us)
+  $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
+    
+  Write-Host "PID"$prv.ProcessId "Handles:"$prv.HandleCount "Threads:"$prv.ThreadCount "Private KB:"($prv.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime
   $totMem = $totMem + $prv.PrivatePageCount
   foreach ($provname in $provhost) {
     $provdet = ExecQuery -NameSpace $provname.Namespace -Query ("select * from __Win32Provider where Name = """ + $provname.Provider + """")
@@ -73,12 +83,22 @@ foreach ($proc in $list) {
       $hdr = $true
     }
 
-    $prc = ExecQuery -Namespace "root\cimv2" -Query ("select ProcessId, CreationDate, HandleCount, ThreadCount, PrivatePageCount, ExecutablePath from Win32_Process where ProcessId = " +  $proc.id)
+    $prc = ExecQuery -Namespace "root\cimv2" -Query ("select ProcessId, CreationDate, HandleCount, ThreadCount, PrivatePageCount, ExecutablePath, KernelModeTime, UserModeTime from Win32_Process where ProcessId = " +  $proc.id)
     if ($PSVersionTable.psversion.ToString() -ge "3.0") {
       $ut= New-TimeSpan -Start $prc.CreationDate
     } else {
       $ut= New-TimeSpan -Start $prc.ConvertToDateTime($prc.CreationDate)
     }
+
+    $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+
+    $ks = $prc.KernelModeTime / 10000000
+    $kt = [timespan]::fromseconds($ks)
+    $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
+
+    $us = $prc.UserModeTime / 10000000
+    $ut = [timespan]::fromseconds($us)
+    $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
 
     $svc = ExecQuery -Namespace "root\cimv2" -Query ("select Name from Win32_Service where ProcessId = " +  $prc.ProcessId)
     $svclist = ""
@@ -92,7 +112,7 @@ foreach ($proc in $list) {
     }
 
     Write-Host ($prc.ExecutablePath + $svc)
-    Write-Host "PID"$prc.ProcessId "Handles:"$prc.HandleCount "Threads:"$prc.ThreadCount "Private KB:"($prc.PrivatePageCount/1kb) "Uptime:"($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+    Write-Host "PID"$prc.ProcessId "Handles:"$prc.HandleCount "Threads:"$prc.ThreadCount "Private KB:"($prc.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime
 
     $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
     $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
