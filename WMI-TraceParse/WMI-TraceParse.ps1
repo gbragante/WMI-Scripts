@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20180209
+# WMI-TraceParse - 20180213
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -7,11 +7,23 @@ param (
 
 Function FindSep {
   param( [string]$FindIn, [string]$Left,[string]$Right )
+  Write-Host $FindIn "Left: " $Left "Right: " $Right
   $Start = $FindIn.IndexOf($Left) + $Left.Length
+
+  $Start = $FindIn.IndexOf($Left) 
+  if ($Start -gt 0 ) {
+     $Start = $Start + $Left.Length
+  } else {
+     return ""
+  }
+
   if ($Right -eq "") {
     $End = $FindIn.Substring($Start).Length
   } else {
     $End = $FindIn.Substring($Start).IndexOf($Right)
+    if ($end -le 0) {
+      $End = $FindIn.Substring($Start).Length
+    }
   }
   $Found = $FindIn.Substring($Start, $End)
   return $Found
@@ -22,7 +34,7 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-#$FileName = ".\Trace-Spike.txt"
+#$FileName = ".\Trace-AccessDenied.txt"
 if ($FileName -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -63,37 +75,47 @@ $sr = new-object System.io.streamreader(get-item $FileName)
 $line = $sr.ReadLine()
 $lines = $lines + 1
 while (-not $sr.EndOfStream) {
+  $part = ""
   if ($line -match  "\[Microsoft-Windows-WMI-Activity/Trace\]") {
     
     $npos=$line.IndexOf("::")
     $time = ($line.Substring($nPos + 2 , 25))
 
-    if ($line -match  "CorrelationId =") {  
-      if ($line -match  "Protocol = DCOM") {
+    $part = $line
+    $line = $sr.ReadLine()
+    if ($line.substring(0,1) -ne "[" ) {
+      $part = $part + $line
+    }
+
+    if ($part -match  "CorrelationId =") {  
+      if ($part -match  "Protocol = DCOM") {
       } else {
-        if ($line -match  "::Connect") {
+        if ($part -match  "::Connect") {
         } else {    
           $row = $tbEvt.NewRow()
           $row.Time = $time
-          $row.CorrelationID = FindSep -FindIn $line -Left "CorrelationId = " -Right ";"
-          $row.GroupOperationID = FindSep -FindIn $line -Left "GroupOperationId = " -Right ";"
-          $row.OperationID = FindSep -FindIn $line -Left " OperationId = " -Right ";"
-          $row.Operation = FindSep -FindIn $line -Left "Start IWbemServices::" -Right " - "
-          $row.Namespace = FindSep -FindIn $line -Left ($row.Operation + " - ") -Right " : "
-          $row.Query = FindSep -FindIn $line -Left ($row.Namespace + " : ") -Right ";"
-          $row.ClientMachine = FindSep -FindIn $line -Left "ClientMachine = " -Right ";"
-          $row.User = FindSep -FindIn $line -Left "User = " -Right ";"
-          $row.ClientPID = FindSep -FindIn $line -Left "ClientProcessId = " -Right ";"
+          $row.CorrelationID = FindSep -FindIn $part -Left "CorrelationId = " -Right ";"
+          $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
+          $row.OperationID = FindSep -FindIn $part -Left " OperationId = " -Right ";"
+          $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
+          $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
+          $row.Query = FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right ";"
+          if ($row.Query -eq "SELECT * FROM Win32_OperatingSystem") {
+            Write-Host "here we are"
+          }
+          $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
+          $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
+          $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
           $tbEvt.Rows.Add($row)
         }
       }
     } else {
-      if ($line -match  "Stop OperationId") {        
-        $OperationID = FindSep -FindIn $line -Left "OperationId = " -Right ";"     
+      if ($part -match  "Stop OperationId") {        
+        $OperationID = FindSep -FindIn $part -Left "OperationId = " -Right ";"     
         $aOpId = $tbEvt.Select("OperationID = '" + $OperationID + "'")
         
         if ($aOpId.Count -gt 0) { 
-          $ResultCode = FindSep -FindIn $line -Left "ResultCode = " -Right ""
+          $ResultCode = FindSep -FindIn $part -Left "ResultCode = " -Right ""
 
           $dtStart = ToTime $aOpId[0].Time
           $dtEnd = ToTime $time
@@ -105,7 +127,44 @@ while (-not $sr.EndOfStream) {
       }
     }
   }
-  $line = $sr.ReadLine()
+
+  if ($line -match  "\[Microsoft-Windows-WMI-Activity/Operational\]") {
+    $npos=$line.IndexOf("::")
+    $time = ($line.Substring($nPos + 2 , 25))
+    $part = $line
+    $line = $sr.ReadLine()
+    if ($line.substring(0,1) -ne "[" ) {
+      $part = $part + $line
+    }
+    $CorrelationID = FindSep -FindIn $part -Left "Id = " -Right ";"
+    if ($CorrelationID -eq "") {
+      Write-Host "Provider started"
+    } else { 
+      Write-Host $part
+      $Operation = FindSep -FindIn $part -Left "Operation = " -Right " - "
+      $NameSpace = FindSep -FindIn $part -Left ($Operation + " - ") -Right " : "
+      $Query = (FindSep -FindIn $part -Left ($NameSpace + " : ")  -Right ";").Replace("'","''")
+      
+      $select  = "CorrelationID = '" + $CorrelationID + "' and Query = '" + $query + "'"
+      $aOpId = $tbEvt.Select($select)
+      if ($aOpId.Count -gt 0) { 
+        $item = $aOpId.Count - 1
+        $ResultCode = FindSep -FindIn $part -Left "ResultCode = " -Right ";"
+
+        $dtStart = ToTime $aOpId[0].Time
+        $dtEnd = ToTime $time
+        $duration = New-TimeSpan -Start $dtStart -End $dtEnd
+          
+        $aOpId[$item].ResultCode = $ResultCode
+        $aOpId[$item].Duration = $duration.TotalMilliseconds
+      }
+      write-host "Break"
+    }
+    Write-Host $part
+  }
+  if ($part -eq "") {
+    $line = $sr.ReadLine()
+  }
 }
 
 $sr.Close()
