@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180122)"
+$version = "WMI-Collect (20180219)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -144,6 +144,23 @@ Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Exporting service configuration"
+$cmd = "sc.exe queryex winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+$cmd = "sc.exe qc winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+$cmd = "sc.exe enumdepend winmgmt 3000 >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+$cmd = "sc.exe sdshow winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 

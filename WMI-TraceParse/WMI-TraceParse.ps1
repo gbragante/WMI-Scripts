@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20180213
+# WMI-TraceParse - 20180216
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -7,7 +7,6 @@ param (
 
 Function FindSep {
   param( [string]$FindIn, [string]$Left,[string]$Right )
-  Write-Host $FindIn "Left: " $Left "Right: " $Right
   $Start = $FindIn.IndexOf($Left) + $Left.Length
 
   $Start = $FindIn.IndexOf($Left) 
@@ -34,7 +33,6 @@ Function ToTime{
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
 }
 
-#$FileName = ".\Trace-AccessDenied.txt"
 if ($FileName -eq "") {
   Write-Host "Trace filename not specified"
   exit
@@ -69,7 +67,7 @@ $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CorrelationID,([string])
 $tbEvt.Columns.Add($col)
 
-$dtStart = Get-Date
+$dtInit = Get-Date
 
 $sr = new-object System.io.streamreader(get-item $FileName)
 $line = $sr.ReadLine()
@@ -100,9 +98,6 @@ while (-not $sr.EndOfStream) {
           $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
           $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
           $row.Query = FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right ";"
-          if ($row.Query -eq "SELECT * FROM Win32_OperatingSystem") {
-            Write-Host "here we are"
-          }
           $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
           $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
           $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
@@ -158,7 +153,6 @@ while (-not $sr.EndOfStream) {
         $aOpId[$item].ResultCode = $ResultCode
         $aOpId[$item].Duration = $duration.TotalMilliseconds
       }
-      write-host "Break"
     }
     Write-Host $part
   }
@@ -171,5 +165,5 @@ $sr.Close()
 
 $tbEvt | Export-Csv ($FileName + ".csv") -noType
 
-$duration = New-TimeSpan -Start $dtStart -End (Get-Date)
-Write-Host "Execution completed in" $duration
+$duration = New-TimeSpan -Start $dtInit -End (Get-Date)
+Write-Host "Execution completed in" $duration.TotalSeconds "seconds"
