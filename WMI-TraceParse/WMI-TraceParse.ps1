@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20180222
+# WMI-TraceParse - 20180226
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -24,11 +24,36 @@ Function FindSep {
   } else {
     $End = $FindIn.Substring($Start).IndexOf($Right)
     if ($end -le 0) {
-      $End = $FindIn.Substring($Start).Length
+      return ""
     }
   }
   $Found = $FindIn.Substring($Start, $End)
   return $Found
+}
+
+Function FindClass {
+  param( [string] $InQuery, [string]$Quote)
+  $FindClass = FindSep -FindIn $InQuery -Left "from " -Right " "
+  if ($FindClass -eq "") {
+     $FindClass = FindSep -FindIn $InQuery -Left "from " -Right ""
+     if ($FindClass -eq "") {
+       if ($InQuery -match "associators") {
+         $FindClass = FindSep -FindIn $InQuery -Left "{" -Right "="
+       } else {
+         $FindClass = (FindSep -FindIn $InQuery -Left "" -Right " where") # fails here for associators
+         if ($FindClass -eq "") {
+           $FindClass = (FindSep -FindIn $InQuery -Left "" -Right ".")
+           if ($FindClass -eq "") {
+             $FindClass = (FindSep -FindIn $InQuery -Left "" -Right "::")
+             if ($FindClass -eq "") {
+               $FindClass = $InQuery.Replace("'", $Quote)
+             }
+           }                        
+         }
+       }
+     }
+   }
+   return $FindClass
 }
 
 Function ToTime{
@@ -148,15 +173,8 @@ while (-not $sr.EndOfStream) {
           $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
           $row.Operation = FindSep -FindIn $part -Left "Operation = Provider::" -Right " - "
           $Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
-          $row.Query = (FindSep -FindIn $part -Left ($Namespace + " : ") -Right ";").ToLower()
-          $row.Class = FindSep -FindIn $row.Query -Left "from " -Right " "
-          if ($row.Class -eq "") {
-            $row.Class = (FindSep -FindIn $row.Query -Left "" -Right " where")
-            if ($Class -eq "") {
-              $Class = $row.Query.Replace("'","''")
-            }
-          }
-
+          $row.Query = (FindSep -FindIn $part -Left ($Namespace + " : ") -Right ";").ToLower()        
+          $row.Class = FindClass $row.Query "''"
           $row.HostID = FindSep -FindIn $part -Left "HostID = " -Right ";"
           $row.ProviderName = FindSep -FindIn $part -Left "ProviderName = " -Right ";"
           $row.ProviderGuid = FindSep -FindIn $part -Left "ProviderGuid = " -Right ";"
@@ -196,6 +214,18 @@ while (-not $sr.EndOfStream) {
     }
     Write-Host $part
   }
+  if ($part -match  "Executing polling query") { 
+    $npos = $part.IndexOf("::")
+    $time = ($part.Substring($nPos + 2 , 25))
+    $row = $tbEvt.NewRow()
+    $row.Time = $time
+    $row.Operation = "Polling"
+    $row.Namespace = (FindSep -FindIn $part -Left "'//./" -Right "'").ToLower().Replace("/","\")
+    $row.Query = (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
+    $tbEvt.Rows.Add($row)
+    Write-host $part
+  }
+
   if ($part -eq "") {
     $line = $sr.ReadLine()
   }
@@ -210,21 +240,18 @@ foreach ($row in $tbEvt.Rows) {
     $row.HostID = $aProv[0].HostID
     $row.ProviderName = $aProv[0].ProviderName
   } else {
-    $Class = (FindSep -FindIn $row.Query -Left "from " -Right " ")
-    if ($Class -eq "") {
-      $Class = (FindSep -FindIn $row.Query -Left "" -Right " where")
-      if ($Class -eq "") {
-        $Class = $row.Query.Replace("'","""")
-      } else {
-        if ($row.Query -match "associators") {
-          $Class = $row.Query.Replace("'","""")
-        }
-      }
-    }
+    $Class = FindClass $row.Query """"
     $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
     if ($aProv.Count -gt 0) {
       $row.HostID = $aProv[0].HostID
       $row.ProviderName = $aProv[0].ProviderName
+    } else {
+      $aProv = $tbProv.Select("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+      if ($aProv.Count -gt 0) {
+        $row.HostID = $aProv[0].HostID
+        $row.ProviderName = $aProv[0].ProviderName
+        $row.GroupOperationID = $aProv[0].GroupOperationID
+      }
     }
   }
 }
