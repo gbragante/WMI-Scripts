@@ -1,4 +1,4 @@
-$version = "Perf-Collect (20170925)"
+$version = "Perf-Collect (20180307)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -164,6 +164,9 @@ Write-Log "Enumerating 32bit performance counters"
 $cmd = $env:windir + "\SysWOW64\typeperf.exe -qx > """ + $resDir + "\typeperf32-inst.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Enumerating WMI performance classes"
+Get-WmiObject -Query "select * from meta_class where __CLASS like '%Win32_Perf%'" | Select-Object -Property __CLASS | Sort-Object -Property __CLASS | Out-File ($resDir + "\WMIPerfClasses.txt")
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
