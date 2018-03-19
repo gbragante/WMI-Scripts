@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20180226
+# WMI-TraceParse - 20180319
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -33,14 +33,14 @@ Function FindSep {
 
 Function FindClass {
   param( [string] $InQuery, [string]$Quote)
-  $FindClass = FindSep -FindIn $InQuery -Left "from " -Right " "
+  $FindClass = (FindSep -FindIn $InQuery -Left "from " -Right " ").Trim()
   if ($FindClass -eq "") {
-     $FindClass = FindSep -FindIn $InQuery -Left "from " -Right ""
+     $FindClass = (FindSep -FindIn $InQuery -Left "from " -Right "").Trim()
      if ($FindClass -eq "") {
        if ($InQuery -match "associators") {
          $FindClass = FindSep -FindIn $InQuery -Left "{" -Right "="
        } else {
-         $FindClass = (FindSep -FindIn $InQuery -Left "" -Right " where") # fails here for associators
+         $FindClass = (FindSep -FindIn $InQuery -Left "" -Right " where")
          if ($FindClass -eq "") {
            $FindClass = (FindSep -FindIn $InQuery -Left "" -Right ".")
            if ($FindClass -eq "") {
@@ -56,6 +56,14 @@ Function FindClass {
    return $FindClass
 }
 
+Function CleanQuery {
+  param([string] $InQuery)
+  while ($InQuery.IndexOf("  ") -ge 0) {
+    $InQuery = $InQuery.Replace("  ", " ")
+  }
+  return $InQuery
+}
+
 Function ToTime{
   param( [string]$time)
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
@@ -64,6 +72,47 @@ Function ToTime{
 if ($FileName -eq "") {
   Write-Host "Trace filename not specified"
   exit
+}
+
+Function Parse-ProviderInfo {
+  $row = $tbProv.NewRow()
+  $row.Time = $time
+  $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
+  $row.Operation = FindSep -FindIn $part -Left "Operation = Provider::" -Right " - "
+  $Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
+  $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($Namespace + " : ") -Right ";").ToLower()        
+  $row.Class = FindClass $row.Query "''"
+  $row.HostID = FindSep -FindIn $part -Left "HostID = " -Right ";"
+  $row.ProviderName = FindSep -FindIn $part -Left "ProviderName = " -Right ";"
+  $row.ProviderGuid = FindSep -FindIn $part -Left "ProviderGuid = " -Right ";"
+  $row.Path = FindSep -FindIn $part -Left "Path = " -Right ";"
+  $tbProv.Rows.Add($row)
+  Write-Host $part          
+}
+
+Function Parse-ProviderStarted {
+  $row = $tbProv.NewRow()
+  $row.Time = $time
+  $row.Operation = "Start"
+  $row.HostID = FindSep -FindIn $part -Left "ProcessID = " -Right ";"
+  $row.ProviderName = FindSep -FindIn $part -Left "] " -Right " provider"
+  $row.Path = FindSep -FindIn $part -Left "ProviderPath = " -Right ""
+  $row.ResultCode = FindSep -FindIn $part -Left "result code " -Right "."
+  $tbProv.Rows.Add($row)
+}
+
+Function Parse-ConnectToNamespace {
+  $row = $tbEvt.NewRow()
+  $row.Time = $time
+  $row.Operation = "ConnectToNamespace"
+  $row.Namespace = FindSep -FindIn $part -Left "namespace : " -Right ";"
+  $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
+  $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
+  $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
+  $row.ResultCode = FindSep -FindIn $part -Left "ResultCode = " -Right ";"
+  $row.PossibleCause = FindSep -FindIn $part -Left "PossibleCause = " -Right "."
+  $tbEvt.Rows.Add($row)
+  Write-host $part
 }
 
 $tbEvt = New-Object system.Data.DataTable “evt”
@@ -80,6 +129,8 @@ $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Duration,([string])
 $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ResultCode,([string])
+$tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn PossibleCause,([string])
 $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ClientMachine,([string])
 $tbEvt.Columns.Add($col)
@@ -109,6 +160,8 @@ $col = New-Object system.Data.DataColumn Class,([string])
 $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn HostID,([string])
 $tbProv.Columns.Add($col)
+$col = New-Object system.Data.DataColumn ResultCode,([string])
+$tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderName,([string])
 $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderGuid,([string])
@@ -123,14 +176,17 @@ $line = $sr.ReadLine()
 while (-not $sr.EndOfStream) {
   $part = ""
   $part = $line
-  $line = $sr.ReadLine()
-  if ($line.substring(0,1) -ne "[" ) {
+
+  while (1 -eq 1) {
+    $line = $sr.ReadLine()
+    if ($line.Substring(0,1) -eq "[") { break }
     $part = $part + $line
   }
+
+  $npos = $part.IndexOf("::")
+  $time = ($part.Substring($nPos + 2 , 25))
   
   if ($part -match  "\[Microsoft-Windows-WMI-Activity/Trace\]") { 
-    $npos = $part.IndexOf("::")
-    $time = ($part.Substring($nPos + 2 , 25))
     if ($part -match  "CorrelationId =") {  
       if ($part -match  "Protocol = DCOM") {
       } else {
@@ -143,7 +199,7 @@ while (-not $sr.EndOfStream) {
           $row.OperationID = FindSep -FindIn $part -Left " OperationId = " -Right ";"
           $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
           $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
-          $row.Query = (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right ";").ToLower()
+          $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right ";").ToLower()
           $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
           $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
           $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
@@ -168,60 +224,49 @@ while (-not $sr.EndOfStream) {
         }
       } else {
         if ($part -match  "ProviderInfo for GroupOperationId") {
-          $row = $tbProv.NewRow()
-          $row.Time = $time
-          $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
-          $row.Operation = FindSep -FindIn $part -Left "Operation = Provider::" -Right " - "
-          $Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
-          $row.Query = (FindSep -FindIn $part -Left ($Namespace + " : ") -Right ";").ToLower()        
-          $row.Class = FindClass $row.Query "''"
-          $row.HostID = FindSep -FindIn $part -Left "HostID = " -Right ";"
-          $row.ProviderName = FindSep -FindIn $part -Left "ProviderName = " -Right ";"
-          $row.ProviderGuid = FindSep -FindIn $part -Left "ProviderGuid = " -Right ";"
-          $row.Path = FindSep -FindIn $part -Left "Path = " -Right ";"
-          $tbProv.Rows.Add($row)
-          Write-Host $part          
+          Parse-ProviderInfo
         }
       }
     }
   }
 
   if ($part -match  "\[Microsoft-Windows-WMI-Activity/Operational\]") {
-    $npos = $part.IndexOf("::")
-    $time = ($part.Substring($nPos + 2 , 25))
     $CorrelationID = FindSep -FindIn $part -Left "Id = " -Right ";"
     if ($CorrelationID -eq "") {
-      Write-Host "Provider started"
+      if ($part -match "provider started with result code") {
+        Parse-ProviderStarted
+      } elseif ($part -match "Operation = connect to namespace") {
+        Parse-ConnectToNamespace
+      }
     } else { 
-      Write-Host $part
       $Operation = FindSep -FindIn $part -Left "Operation = " -Right " - "
       $NameSpace = FindSep -FindIn $part -Left ($Operation + " - ") -Right " : "
-      $Query = (FindSep -FindIn $part -Left ($NameSpace + " : ")  -Right ";").Replace("'","''")
+      $Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($NameSpace + " : ")  -Right ";").Replace("'","''")
       
       $select  = "CorrelationID = '" + $CorrelationID + "' and Query = '" + $query + "'"
       $aOpId = $tbEvt.Select($select)
       if ($aOpId.Count -gt 0) { 
         $item = $aOpId.Count - 1
         $ResultCode = FindSep -FindIn $part -Left "ResultCode = " -Right ";"
+        $PossibleCause = FindSep -FindIn $part -Left "PossibleCause = " -Right ""
 
         $dtStart = ToTime $aOpId[0].Time
         $dtEnd = ToTime $time
         $duration = New-TimeSpan -Start $dtStart -End $dtEnd
           
         $aOpId[$item].ResultCode = $ResultCode
+        $aOpId[$item].PossibleCause = $PossibleCause
         $aOpId[$item].Duration = $duration.TotalMilliseconds
       }
     }
     Write-Host $part
   }
   if ($part -match  "Executing polling query") { 
-    $npos = $part.IndexOf("::")
-    $time = ($part.Substring($nPos + 2 , 25))
     $row = $tbEvt.NewRow()
     $row.Time = $time
     $row.Operation = "Polling"
     $row.Namespace = (FindSep -FindIn $part -Left "'//./" -Right "'").ToLower().Replace("/","\")
-    $row.Query = (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
+    $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
     $tbEvt.Rows.Add($row)
     Write-host $part
   }
@@ -235,22 +280,24 @@ $sr.Close()
 
 Write-Host "Processing providers information"
 foreach ($row in $tbEvt.Rows) {
-  $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
-  if ($aProv.Count -gt 0) {
-    $row.HostID = $aProv[0].HostID
-    $row.ProviderName = $aProv[0].ProviderName
-  } else {
-    $Class = FindClass $row.Query """"
-    $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
+  if ($row.Query.ToString() -ne "") {
+    $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
     if ($aProv.Count -gt 0) {
       $row.HostID = $aProv[0].HostID
       $row.ProviderName = $aProv[0].ProviderName
     } else {
-      $aProv = $tbProv.Select("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+      $Class = FindClass $row.Query """"
+      $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
       if ($aProv.Count -gt 0) {
         $row.HostID = $aProv[0].HostID
         $row.ProviderName = $aProv[0].ProviderName
-        $row.GroupOperationID = $aProv[0].GroupOperationID
+      } else {
+        $aProv = $tbProv.Select("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+        if ($aProv.Count -gt 0) {
+          $row.HostID = $aProv[0].HostID
+          $row.ProviderName = $aProv[0].ProviderName
+          $row.GroupOperationID = $aProv[0].GroupOperationID
+        }
       }
     }
   }
