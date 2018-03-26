@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180219)"
+$version = "WMI-Collect (20180326)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -165,7 +165,7 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
 } else {
@@ -219,6 +219,22 @@ if ($proc) {
   "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
   "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+
+  $drives = @()
+  $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
+  $Vol = ExecQuery -NameSpace "root\cimv2" -Query "select * from Win32_LogicalDisk"
+  foreach ($disk in $vol) {
+    $drv = New-Object PSCustomObject
+    $drv | Add-Member -type NoteProperty -name Letter -value $disk.DeviceID 
+    $drv | Add-Member -type NoteProperty -name DriveType -value $drvtype[$disk.DriveType]
+    $drv | Add-Member -type NoteProperty -name VolumeName -value $disk.VolumeName 
+    $drv | Add-Member -type NoteProperty -Name TotalMB -Value ($disk.size)
+    $drv | Add-Member -type NoteProperty -Name FreeMB -value ($disk.FreeSpace)
+    $drives += $drv
+  }
+  $drives | 
+  Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
+  Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
