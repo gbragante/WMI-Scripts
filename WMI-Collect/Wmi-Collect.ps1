@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180326)"
+$version = "WMI-Collect (20180330)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -21,6 +21,13 @@ Function ExecQuery {
   }
   Write-Log (($ret | measure).count.ToString() + " results")
   return $ret
+}
+
+Function ArchiveLog {
+  param( [string] $LogName )
+  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
+  Write-Log $cmd
+  Invoke-Expression $cmd
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -113,21 +120,19 @@ Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "Application"
 
 Write-Log "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
+ArchiveLog "System"
 
-Write-Log "Exporting DSC log"
+Write-Log "Exporting WMI-Activity/Operational log"
 $cmd = "wevtutil epl Microsoft-Windows-WMI-Activity/Operational """+ $resDir + "\" + $env:computername + "-WMI-Activity.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
-
-Write-Log "Exporting DSC log"
-$cmd = "wevtutil epl Microsoft-Windows-DSC/Operational """+ $resDir + "\" + $env:computername + "-DSC.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
+ArchiveLog "WMI-Activity"
 
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $actLog = Get-WinEvent -logname Microsoft-Windows-WMI-Activity/Operational -Oldest -ErrorAction Continue 2>>$errfile
@@ -196,6 +201,11 @@ if ($proc) {
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
 
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+
   "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
@@ -207,6 +217,7 @@ if ($proc) {
   "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
@@ -362,5 +373,9 @@ if ($quota) {
   ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
   ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
   ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
-  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt") -Append
+  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt")
 }
+
+Write-Log "Collecting Event Filter details"
+$EventFilter = ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter"
+$EventFilter | Select-Object -Property Name, EventNamespace, Query | Out-File -FilePath ($resDir + "\EventFilter.txt")
