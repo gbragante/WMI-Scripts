@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180330)"
+$version = "WMI-Collect (20180405)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -107,6 +107,20 @@ $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
 Write-Log "Listing WBEM folder"
 Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
+
+Write-Log "COM Security"
+$Reg = [WMIClass]"\\.\root\default:StdRegProv"
+$DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
+$DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
+$DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
+$DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
+ 
+# Convert the current permissions to SDDL
+$converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
+"Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole """+ $resDir + "\Ole.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
