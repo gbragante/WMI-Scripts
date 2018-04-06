@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20180330)"
+$version = "DSC-Collect (20180406)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -60,6 +60,11 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\RegistrationK
 if (Test-Path -Path "C:\inetpub\PSDSCPullServer\web.config") {
   Write-Log "Pull server web.config"
   Copy-Item "C:\inetpub\PSDSCPullServer\web.config" ($resDir + "\web.config")
+}
+
+if (Test-Path -Path "C:\Windows\System32\inetsrv\Config\ApplicationHost.config") {
+  Write-Log "IIS ApplicationHost.config"
+  Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($resDir + "\ApplicationHost.config")
 }
 
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
