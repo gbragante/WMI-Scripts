@@ -1,4 +1,4 @@
-# WMI-Report (20180102)
+# WMI-Report (20180516)
 # by Gianni Bragante gbrag@microsoft.com
 
 Function Get-WMINamespace($ns) {
@@ -29,29 +29,29 @@ Function Get-Classes ($ns) {
 
     if( $abstract -eq $true  -or $dynamic -eq $true ) {
       if ($dynamic -eq $true) { # Dynamic class
-        $row = $tbClass.NewRow()
+        $row = $tbDyn.NewRow()
         $row.NameSpace = $ns
         $row.Name = $_.name
         $row.Provider = $_.qualifiers["Provider"].value
-        $tbClass.Rows.Add($row)
+        $tbDyn.Rows.Add($row)
       }
     } else {
       if (-not $_.name.Startswith("__")) {
         if ($static -eq $true) { # Static class = Repository
-          $row = $tbRep.NewRow()
+          $row = $tbStatic.NewRow()
           $row.NameSpace = $ns
           $row.Name = $_.name
           $row.Inst = $_.GetInstances().Count
-          $tbRep.Rows.Add($row)
+          $tbStatic.Rows.Add($row)
         } else {
           $inst = $_.GetInstances().Count # Class with instances, repository as well
-          if ($inst  -gt 0) {
-            $row = $tbRep.NewRow()
+          #if ($inst  -gt 0) {
+            $row = $tbStatic.NewRow()
             $row.NameSpace = $ns
             $row.Name = $_.name
             $row.Inst = $Inst
-            $tbRep.Rows.Add($row)
-          }
+            $tbStatic.Rows.Add($row)
+          #}
         }
       }
     }
@@ -102,7 +102,7 @@ Function Get-ProvDetails($ns, $name, $clsid, $HostingModel, $UnloadTimeout) {
 }
 
 Function Get-WmiNamespaceSecurity {
-    # This function from https://github.com/KurtDeGreeff/PlayPowershell/blob/master/Get-WmiNamespaceSecurity.ps1
+    # This function comes from https://github.com/KurtDeGreeff/PlayPowershell/blob/master/Get-WmiNamespaceSecurity.ps1
     Param ( [parameter(Mandatory=$true,Position=0)][string] $namespace,
         [string] $computer = ".",
         [System.Management.Automation.PSCredential] $credential = $null)
@@ -204,21 +204,21 @@ $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CLSID,([string])
 $tbProv.Columns.Add($col)
 
-$tbClass = New-Object system.Data.DataTable “Classes”
+$tbDyn = New-Object system.Data.DataTable “Classes”
 $col = New-Object system.Data.DataColumn NameSpace,([string])
-$tbClass.Columns.Add($col)
+$tbDyn.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
-$tbClass.Columns.Add($col)
+$tbDyn.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Provider,([string])
-$tbClass.Columns.Add($col)
+$tbDyn.Columns.Add($col)
 
-$tbRep = New-Object system.Data.DataTable “Repository”
+$tbStatic = New-Object system.Data.DataTable “Repository”
 $col = New-Object system.Data.DataColumn NameSpace,([string])
-$tbRep.Columns.Add($col)
+$tbStatic.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
-$tbRep.Columns.Add($col)
+$tbStatic.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Inst,([string])
-$tbRep.Columns.Add($col)
+$tbStatic.Columns.Add($col)
 
 $tbSec = New-Object system.Data.DataTable “Security”
 $col = New-Object system.Data.DataColumn NameSpace,([string])
@@ -232,8 +232,8 @@ Get-WMINamespace "Root"
 Write-Host "Writing Providers.csv"
 $tbProv | Export-Csv $resDir"\Providers.csv" -noType
 Write-Host "Writing Classes.csv"
-$tbClass | Export-Csv $resDir"\Classes.csv" -noType
+$tbDyn | Export-Csv $resDir"\Dynamic.csv" -noType
 Write-Host "Writing Repository.csv"
-$tbRep | Export-Csv $resDir"\Repository.csv" -noType
+$tbStatic | Export-Csv $resDir"\Static.csv" -noType
 Write-Host "Writing Security.csv"
 $tbSec | Export-Csv $resDir"\Security.csv" -noType
