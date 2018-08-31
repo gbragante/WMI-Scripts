@@ -1,4 +1,4 @@
-$version = "WMI-Collect (20180405)"
+$version = "WMI-Collect (20180831)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -30,6 +30,45 @@ Function ArchiveLog {
   Invoke-Expression $cmd
 }
 
+Function Win10Ver {
+  param(
+    [string] $Build
+  )
+  if ($build -eq 14393) {
+    return " (RS1 / 1607)"
+  } elseif ($build -eq 15063) {
+    return " (RS2 / 1703)"
+  } elseif ($build -eq 16299) {
+    return " (RS3 / 1709)"
+  } elseif ($build -eq 17134) {
+    return " (RS4 / 1803)"
+  }
+}
+
+Add-Type -MemberDefinition @"
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern uint NetApiBufferFree(IntPtr Buffer);
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int NetGetJoinInformation(
+  string server,
+  out IntPtr NameBuffer,
+  out int BufferType);
+"@ -Namespace Win32Api -Name NetApi32
+
+function GetNBDomainName {
+  $pNameBuffer = [IntPtr]::Zero
+  $joinStatus = 0
+  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
+    $null,               # lpServer
+    [Ref] $pNameBuffer,  # lpNameBuffer
+    [Ref] $joinStatus    # BufferType
+  )
+  if ( $apiResult -eq 0 ) {
+    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
+    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
+  }
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -42,6 +81,7 @@ $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
 $resName = "WMI-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
 $resDir = $Root + "\" + $resName
+$subDir = $resdir + "\Subscriptions"
 $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 
@@ -56,6 +96,7 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
 }
 
 New-Item -itemtype directory -path $resDir | Out-Null
+New-Item -itemtype directory -path $subDir | Out-Null
 
 Write-Log $version
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
@@ -96,6 +137,20 @@ Write-Log "Collecting dump of the WmiApSrv.exe process"
 $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
+
+Write-Log "Collecing the dumps of scrcons.exe processes"
+$list = get-process -Name "scrcons" -ErrorAction SilentlyContinue 2>>$errfile
+if (($list | measure).count -gt 0) {
+  foreach ($proc in $list)
+  {
+    Write-Log ("Found scrcons.exe with PID " + $proc.Id)
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\scrcons.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+    Write-Log $cmd
+    Invoke-Expression $cmd
+  }
+} else {
+  Write-Log "No scrcons.exe processes found"
+}
 
 Write-Log "Collecting Autorecover MOFs content"
 $mof = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM")).'Autorecover MOFs'
@@ -235,13 +290,14 @@ if ($proc) {
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
   "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 
@@ -390,6 +446,8 @@ if ($quota) {
   ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($resDir + "\ProviderHostQuotaConfiguration.txt")
 }
 
-Write-Log "Collecting Event Filter details"
-$EventFilter = ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter"
-$EventFilter | Select-Object -Property Name, EventNamespace, Query | Out-File -FilePath ($resDir + "\EventFilter.txt")
+ExecQuery -Namespace "root\subscription" -Query "select * from ActiveScriptEventConsumer" | Export-Clixml -Path ($subDir + "\ActiveScriptEventConsumer.xml")
+ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter" | Export-Clixml -Path ($subDir + "\__eventfilter.xml")
+ExecQuery -Namespace "root\subscription" -Query "select * from __IntervalTimerInstruction" | Export-Clixml -Path ($subDir + "\__IntervalTimerInstruction.xml")
+ExecQuery -Namespace "root\subscription" -Query "select * from __AbsoluteTimerInstruction" | Export-Clixml -Path ($subDir + "\__AbsoluteTimerInstruction.xml")
+ExecQuery -Namespace "root\subscription" -Query "select * from __FilterToConsumerBinding" | Export-Clixml -Path ($subDir + "\__FilterToConsumerBinding.xml")
