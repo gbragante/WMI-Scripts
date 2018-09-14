@@ -1,4 +1,6 @@
-$version = "WMI-Collect (20180831)"
+param( [string]$Path )
+
+$version = "WMI-Collect (20180914)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -78,10 +80,20 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
-
-$resName = "WMI-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$resDir = $Root + "\" + $resName
+if ($Path) {
+  if (-not (Test-Path $path)) {
+    Write-Host "The folder $Path does not esist"
+    exit
+  }
+  $resDir = $Path
+} else {
+  $resName = "WMI-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+  $resDir = $Root + "\" + $resName
+  New-Item -itemtype directory -path $resDir | Out-Null
+}
 $subDir = $resdir + "\Subscriptions"
+New-Item -itemtype directory -path $subDir | Out-Null
+
 $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 
@@ -94,9 +106,6 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
   $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
   if ($confirm.ToLower() -ne "y") {exit}
 }
-
-New-Item -itemtype directory -path $resDir | Out-Null
-New-Item -itemtype directory -path $subDir | Out-Null
 
 Write-Log $version
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
