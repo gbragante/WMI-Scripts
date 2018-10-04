@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20180406)"
+$version = "DSC-Collect (20181004)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -28,6 +28,30 @@ Function ArchiveLog {
   $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
   Write-Log $cmd
   Invoke-Expression $cmd
+}
+
+Add-Type -MemberDefinition @"
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern uint NetApiBufferFree(IntPtr Buffer);
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int NetGetJoinInformation(
+  string server,
+  out IntPtr NameBuffer,
+  out int BufferType);
+"@ -Namespace Win32Api -Name NetApi32
+
+function GetNBDomainName {
+  $pNameBuffer = [IntPtr]::Zero
+  $joinStatus = 0
+  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
+    $null,               # lpServer
+    [Ref] $pNameBuffer,  # lpNameBuffer
+    [Ref] $joinStatus    # BufferType
+  )
+  if ( $apiResult -eq 0 ) {
+    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
+    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
+  }
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -67,6 +91,12 @@ if (Test-Path -Path "C:\Windows\System32\inetsrv\Config\ApplicationHost.config")
   Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($resDir + "\ApplicationHost.config")
 }
 
+if (Test-Path -Path "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config") {
+  Write-Log "Globabl web.config"
+  Copy-Item "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config" ($resDir + "\global-web.config")
+}
+
+
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
   $cmd = "cmd.exe /c esentutl.exe /y ""C:\Program Files\WindowsPowerShell\DscService\Devices.edb"" /vssrec"
   Write-Log $cmd
@@ -97,7 +127,16 @@ Write-Log "Get-DscConfiguration output"
 Get-DscConfiguration | Out-File -FilePath ($resDir + "\Get-DscConfiguration.txt")
 
 Write-Log "Get-DscConfigurationStatus output"
-Get-DscConfigurationStatus -all | Out-File -FilePath ($resDir + "\Get-DscConfigurationStatus.txt")
+Get-DscConfigurationStatus -all 2>>$errfile | Out-File -FilePath ($resDir + "\Get-DscConfigurationStatus.txt")
+
+Get-ChildItem IIS:\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+Get-ChildItem IIS:\AppPools\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+Get-ChildItem IIS:\AppPools\PSWS\WorkerProcesses\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+
+Write-Log "Exporting ipconfig /all output"
+$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
@@ -179,6 +218,11 @@ if ($proc) {
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
 
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+  
   "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
@@ -190,16 +234,19 @@ if ($proc) {
   "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Installation type".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").InstallationType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
   "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 
