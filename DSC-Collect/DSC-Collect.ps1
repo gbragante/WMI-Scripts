@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181004)"
+$version = "DSC-Collect (20181018)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -185,6 +185,23 @@ $cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $resDir + "\" + $e
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "WindowsRemoteManagement"
+
+$dir = $env:windir + "\system32\logfiles\HTTPERR"
+$last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
+Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+
+Write-Log "WinHTTP proxy configuration"
+$cmd = "netsh winhttp show proxy >""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "NSLookup WPAD"
+"------------------" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
+"NSLookup WPAD" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
+"" | Out-File -FilePath ($resDir + "\WinHTTP-Proxy.txt") -Append
+$cmd = "nslookup wpad >>""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
