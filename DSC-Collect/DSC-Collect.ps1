@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181018)"
+$version = "DSC-Collect (20181023)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -96,7 +96,6 @@ if (Test-Path -Path "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.
   Copy-Item "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config" ($resDir + "\global-web.config")
 }
 
-
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
   $cmd = "cmd.exe /c esentutl.exe /y ""C:\Program Files\WindowsPowerShell\DscService\Devices.edb"" /vssrec"
   Write-Log $cmd
@@ -107,9 +106,27 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb")
 Write-Log "DSC Configuration"
 Copy-Item "C:\Windows\System32\Configuration" -Recurse $resDir
 
-Write-Log "DSC Service Configuration"
-New-Item -itemtype directory -path ($resDir + "\DscService") | Out-Null
-Copy-Item "C:\Program Files\WindowsPowerShell\DscService\Configuration" -Recurse ($resDir + "\DscService")
+if (Test-Path -Path "C:\WindowsAzure\Logs\Plugins\Microsoft.Powershell.DSC") {
+  Write-Log "Azure DSC Extension Logs"
+  Copy-Item "C:\WindowsAzure\Logs\Plugins\Microsoft.Powershell.DSC" -Recurse ($resDir + "\AzureDSCLogs")
+}
+
+if (Test-Path -Path "C:\Packages\Plugins\Microsoft.Powershell.DSC") {
+  Write-Log "Azure DSC Extension Package"
+  Copy-Item "C:\Packages\Plugins\Microsoft.Powershell.DSC" -Recurse ($resDir + "\AzureDSCPackage")
+}
+
+if (Test-Path -Path "HKLM:\SOFTWARE\Microsoft\Azure\DSC") {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Azure\DSC"
+  $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Azure\DSC """+ $resDir + "\AzureDSC.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+  Invoke-Expression $cmd
+}
+
+if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Configuration") {
+  Write-Log "DSC Service Configuration"
+  New-Item -itemtype directory -path ($resDir + "\DscService") | Out-Null
+  Copy-Item "C:\Program Files\WindowsPowerShell\DscService\Configuration" -Recurse ($resDir + "\DscService")
+}
 
 Write-Log "Installed certificates"
 Get-ChildItem Cert:\LocalMachine\My\ | Out-File -FilePath ($resDir + "\CertLocalMachineMy.txt")
