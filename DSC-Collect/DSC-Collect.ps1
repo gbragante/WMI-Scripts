@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181023)"
+$version = "DSC-Collect (20181105)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -105,6 +105,11 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb")
 
 Write-Log "DSC Configuration"
 Copy-Item "C:\Windows\System32\Configuration" -Recurse $resDir
+
+if (Test-Path -Path "C:\WindowsAzure\Logs\WaAppAgent.log") {
+  Write-Log "Windows Azure Guest Agent log"
+  Copy-Item "C:\WindowsAzure\Logs\WaAppAgent.log" ($resDir + "\WaAppAgent.log")
+}
 
 if (Test-Path -Path "C:\WindowsAzure\Logs\Plugins\Microsoft.Powershell.DSC") {
   Write-Log "Azure DSC Extension Logs"
