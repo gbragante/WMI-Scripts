@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181105)"
+$version = "DSC-Collect (20181121)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -151,9 +151,16 @@ Get-DscConfiguration | Out-File -FilePath ($resDir + "\Get-DscConfiguration.txt"
 Write-Log "Get-DscConfigurationStatus output"
 Get-DscConfigurationStatus -all 2>>$errfile | Out-File -FilePath ($resDir + "\Get-DscConfigurationStatus.txt")
 
-Get-ChildItem IIS:\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
-Get-ChildItem IIS:\AppPools\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
-Get-ChildItem IIS:\AppPools\PSWS\WorkerProcesses\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+#Get-ChildItem IIS:\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+#Get-ChildItem IIS:\AppPools\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+#Get-ChildItem IIS:\AppPools\PSWS\WorkerProcesses\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
+
+$dir = $env:windir + "\system32\inetsrv"
+if (Test-Path -Path $dir) {
+  $cmd = $dir + "\appcmd list wp >""" + $resDir + "\IIS-WorkerProcesses.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append  
+}
 
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
