@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181121)"
+$version = "DSC-Collect (20181122)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -86,15 +86,36 @@ if (Test-Path -Path "C:\inetpub\PSDSCPullServer\web.config") {
   Copy-Item "C:\inetpub\PSDSCPullServer\web.config" ($resDir + "\web.config")
 }
 
-if (Test-Path -Path "C:\Windows\System32\inetsrv\Config\ApplicationHost.config") {
+if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.config")) {
   Write-Log "IIS ApplicationHost.config"
   Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($resDir + "\ApplicationHost.config")
-}
+
+  $doc = (Get-content ($env:windir + "\System32\inetsrv\Config\ApplicationHost.config")) -as [xml]
+  $logdir = ($doc.configuration.'system.applicationHost'.log.ChildNodes[1].directory).Replace("%SystemDrive%", $env:SystemDrive)
+  
+  foreach ($site in $doc.configuration.'system.applicationHost'.sites.site) {
+    $sitedir = $resDir + "\websites\" + $site.name
+    New-Item -itemtype directory -path $sitedir | Out-Null
+    write-host $site.name, $site.application.ChildNodes[0].physicalpath
+    $path = ($site.application.ChildNodes[0].physicalpath).Replace("%SystemDrive%", $env:SystemDrive)
+    if (Test-Path -Path ($path + "\web.config")) {
+      Copy-Item -path ($path + "\web.config") -destination $sitedir -ErrorAction Continue 2>>$errfile
+
+      $siteLogDir = ($logdir + "\W3SVC" + $site.id)
+      $last = Get-ChildItem -path ($siteLogDir) | Sort CreationTime -Descending | Select Name -First 1 
+      Copy-Item ($siteLogDir + "\" + $last.name) $sitedir -ErrorAction Continue 2>>$errfile
+    }
+  }
+ }
 
 if (Test-Path -Path "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config") {
   Write-Log "Globabl web.config"
   Copy-Item "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.config" ($resDir + "\global-web.config")
 }
+
+$dir = $env:windir + "\system32\logfiles\HTTPERR"
+$last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
+Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
 
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
   $cmd = "cmd.exe /c esentutl.exe /y ""C:\Program Files\WindowsPowerShell\DscService\Devices.edb"" /vssrec"
