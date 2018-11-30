@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20180625
+# WMI-TraceParse - 20181130
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -126,10 +126,6 @@ Function Parse-Query {
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
   $tbEvt.Rows.Add($row)
   Write-host $part
-  if ($row.CorrelationID -eq "{CD7B543B-F23B-0000-AA80-AFCD3BF2D301}") {
-    Write-Host "jjj"
-  }
-
 }
 
 Function Parse-StopOperationID {
@@ -182,21 +178,27 @@ if ($FileName -eq "") {
   exit
 }
 
-$KFileName = $FileName.ToLower().Replace("wmi-trace-","wmi-trace-kernel-")
+$KFileName = ""
+$fileobj = Get-Item $FileName
+if ($fileobj.Basename.ToLower().Contains("wmi-trace")) {
+  $KFileName = $fileobj.Basename.ToLower().Replace("wmi-trace-","wmi-trace-kernel-")
+}
 
 if (-not (Test-Path ($FileName))) {
   Write-Host "WMI trace not found"
   exit
 }
 
-if (Test-Path ($KFileName)) {
-  $Kernel = $true
-} else {
-  Write-Host "Kernel trace not found"
-  $Kernel = $false
+if ($KFileName) {
+  if (Test-Path ($KFileName)) {
+    $Kernel = $true
+  } else {
+    Write-Host "Kernel trace not found"
+    $Kernel = $false
+  }
 }
 
-$tbEvt = New-Object system.Data.DataTable �evt�
+$tbEvt = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ClientPID,([int32]); $tbEvt.Columns.Add($col)
 if ($Kernel) {
@@ -248,6 +250,7 @@ while (-not $sr.EndOfStream) {
 
   while (1 -eq 1) {
     $line = $sr.ReadLine()
+    if ($sr.EndOfStream) { break }
     if ($line.Substring(0,1) -eq "[") { break }
     $part = $part + $line
   }
