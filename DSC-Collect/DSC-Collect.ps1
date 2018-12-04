@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181122)"
+$version = "DSC-Collect (20181204)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -54,6 +54,11 @@ function GetNBDomainName {
   }
 }
 
+Function GetFileVersion($filename) {
+  $getfile = Get-Item $filename
+  ("""" + $filename +""",""" + $getfile.creationtime +""",""" + $getfile.VersionInfo.FileVersion + """") | Out-File ($resDir + "\FileVersions.csv") -Append
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -81,11 +86,6 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\RegistrationK
   Copy-Item "C:\Program Files\WindowsPowerShell\DscService\RegistrationKeys.txt" ($resDir + "\RegistrationKeys.txt")
 }
 
-if (Test-Path -Path "C:\inetpub\PSDSCPullServer\web.config") {
-  Write-Log "Pull server web.config"
-  Copy-Item "C:\inetpub\PSDSCPullServer\web.config" ($resDir + "\web.config")
-}
-
 if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.config")) {
   Write-Log "IIS ApplicationHost.config"
   Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($resDir + "\ApplicationHost.config")
@@ -104,6 +104,10 @@ if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.con
       $siteLogDir = ($logdir + "\W3SVC" + $site.id)
       $last = Get-ChildItem -path ($siteLogDir) | Sort CreationTime -Descending | Select Name -First 1 
       Copy-Item ($siteLogDir + "\" + $last.name) $sitedir -ErrorAction Continue 2>>$errfile
+
+      if ($site.name -eq "PSDSCPullServer") {
+        GetFileVersion ($path + "\bin\Microsoft.Powershell.DesiredStateConfiguration.Service.dll")
+      }
     }
   }
  }
@@ -183,6 +187,11 @@ if (Test-Path -Path $dir) {
   Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append  
 }
 
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP"
+$cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """+ $resDir + "\HTTP.reg.txt"" /y" + $RdrOut + $RdrErr
+Write-Log $cmd
+Invoke-Expression $cmd
+
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
@@ -216,13 +225,19 @@ Write-Log "Exporting DSC PullServer log"
 $cmd = "wevtutil epl Microsoft-Windows-Powershell-DesiredStateConfiguration-PullServer/Operational """+ $resDir + "\" + $env:computername + "-PullServer.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
-ArchiveLog "PullServer"
+ArchiveLog "PullServer"Write-Log "Exporting DSC PullServer log"
 
 Write-Log "Exporting DSC FileDownloadManager log"
 $cmd = "wevtutil epl Microsoft-Windows-PowerShell-DesiredStateConfiguration-FileDownloadManager/Operational """+ $resDir + "\" + $env:computername + "-FileDownloadManager.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "FileDownloadManager"
+
+Write-Log "Exporting ManagementOdataService log"
+$cmd = "wevtutil epl Microsoft-Windows-ManagementOdataService/Operational """+ $resDir + "\" + $env:computername + "-ManagementOdataService.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+ArchiveLog "ManagementOdataService"
 
 Write-Log "Exporting PowerShell log"
 $cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $resDir + "\" + $env:computername + "-PowerShell.evtx""" + $RdrOut + $RdrErr
