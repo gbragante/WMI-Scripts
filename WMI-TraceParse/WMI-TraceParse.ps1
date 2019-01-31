@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20181130
+# WMI-TraceParse - 20190131
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -181,7 +181,7 @@ if ($FileName -eq "") {
 $KFileName = ""
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("wmi-trace")) {
-  $KFileName = $fileobj.Basename.ToLower().Replace("wmi-trace-","wmi-trace-kernel-")
+  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("wmi-trace-","wmi-trace-kernel-") + ".txt"
 }
 
 if (-not (Test-Path ($FileName))) {
@@ -307,26 +307,28 @@ if ($Kernel) {
   $line = $sr.ReadLine()
   while (-not $sr.EndOfStream) {
     $npos = $line.IndexOf("::")
-    $time = ($line.Substring($nPos + 2 , 25))
+    if ($nPos -gt 0) {
+      $time = ($line.Substring($nPos + 2 , 25))
 
-    if (($line -match "Process - DCStart") -or ($line -match "Process - Start")) {
-      $row = $tbProc.NewRow()
-      $row.Start = $time
-      $row.PID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")
-      $row.Parent = [int32](FindSep -FindIn $line -Left "ParentId=" -Right ",")
-      $row.SessionId = FindSep -FindIn $line -Left "SessionId=" -Right ","
-      $row.User = (FindSep -FindIn $line -Left "UserSID=" -Right ",").Replace("\\","")
-      $row.FileName= (FindSep -FindIn $line -Left "FileName=" -Right ",")
-      $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\??\","")
-      $tbProc.Rows.Add($row)
-      Write-host $line
-    }
+      if (($line -match "Process - DCStart") -or ($line -match "Process - Start")) {
+        $row = $tbProc.NewRow()
+        $row.Start = $time
+        $row.PID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")
+        $row.Parent = [int32](FindSep -FindIn $line -Left "ParentId=" -Right ",")
+        $row.SessionId = FindSep -FindIn $line -Left "SessionId=" -Right ","
+        $row.User = (FindSep -FindIn $line -Left "UserSID=" -Right ",").Replace("\\","")
+        $row.FileName= (FindSep -FindIn $line -Left "FileName=" -Right ",")
+        $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\??\","")
+        $tbProc.Rows.Add($row)
+        Write-host $line
+      }
 
-    if (($line -match "Process - End") -or ($line -match "Process - DCEnd")) {
-      $ProcID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")    
-      $aProc = $tbProc.Select("PID = " + $ProcID)
-      if ($aProc.Count -gt 0) {
-        $aProc[$aProc.Count-1].Stop = $time
+      if (($line -match "Process - End") -or ($line -match "Process - DCEnd")) {
+        $ProcID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")    
+        $aProc = $tbProc.Select("PID = " + $ProcID)
+        if ($aProc.Count -gt 0) {
+          $aProc[$aProc.Count-1].Stop = $time
+        }
       }
     }
     $line = $sr.ReadLine()
