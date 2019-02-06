@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20180914)"
+$version = "WMI-Collect (20190206)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -44,6 +44,8 @@ Function Win10Ver {
     return " (RS3 / 1709)"
   } elseif ($build -eq 17134) {
     return " (RS4 / 1803)"
+  } elseif ($build -eq 17763) {
+    return " (RS5 / 1809)"
   }
 }
 
@@ -185,6 +187,20 @@ $converter = new-object system.management.ManagementClass Win32_SecurityDescript
 "Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 "Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 "Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+
+Write-Log "Exporting WMIPrvSE AppIDs registration keys"
+$cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """ + $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+$cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{1F87137D-0E7C-44d5-8C73-4EFFB68962F2}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+$cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+$cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{1F87137D-0E7C-44d5-8C73-4EFFB68962F2}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole """+ $resDir + "\Ole.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
