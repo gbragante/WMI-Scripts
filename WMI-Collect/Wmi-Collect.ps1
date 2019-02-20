@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20190206)"
+$version = "WMI-Collect (20190220)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -73,6 +73,24 @@ function GetNBDomainName {
   }
 }
 
+Function FileVersion {
+  param(
+    [string] $FilePath,
+    [bool] $Log = $false
+  )
+  if (Test-Path -Path $FilePath) {
+    $fileobj = Get-item $FilePath
+    $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
+
+    if ($log) {
+      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
+    }
+    return $filever
+  } else {
+    return ""
+  }
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -109,7 +127,6 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
   if ($confirm.ToLower() -ne "y") {exit}
 }
 
-Write-Log $version
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
 $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinMgmt """ + $resDir + "\Svchost.exe-WinMgmt.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
@@ -262,6 +279,11 @@ Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 $cmd = "sc.exe sdshow winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+FileVersion -Filepath ($env:windir + "\system32\wbem\wbemcore.dll") -Log $true
+FileVersion -Filepath ($env:windir + "\system32\wbem\repdrvfs.dll") -Log $true
+FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPrvSE.exe") -Log $true
+FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $true
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
