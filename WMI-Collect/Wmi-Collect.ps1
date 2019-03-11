@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20190220)"
+$version = "WMI-Collect (20190311)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -85,7 +85,7 @@ Function FileVersion {
     if ($log) {
       ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
     }
-    return $filever
+    return $filever | Out-Null
   } else {
     return ""
   }
@@ -127,6 +127,7 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
   if ($confirm.ToLower() -ne "y") {exit}
 }
 
+Write-Log $version
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
 $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinMgmt """ + $resDir + "\Svchost.exe-WinMgmt.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
 Write-Log $cmd
@@ -190,20 +191,6 @@ $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
 Write-Log "Listing WBEM folder"
 Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
-
-Write-Log "COM Security"
-$Reg = [WMIClass]"\\.\root\default:StdRegProv"
-$DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
-$DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
-$DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
-$DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
- 
-# Convert the current permissions to SDDL
-$converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
-"Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
-"Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
-"Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
-"Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 
 Write-Log "Exporting WMIPrvSE AppIDs registration keys"
 $cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """ + $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
@@ -286,7 +273,7 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPrvSE.exe") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $true
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
 } else {
@@ -300,6 +287,14 @@ if ($proc) {
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
   @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
   Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
+
+  Write-Log "Retrieving file version of running binaries"
+  $binlist = $proc | Group-Object -Property ExecutablePath
+  foreach ($file in $binlist) {
+    if ($file.Name) {
+      FileVersion -Filepath ($file.name) -Log $true
+    }
+  }
 
   Write-Log "Collecting services details"
   $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
@@ -371,6 +366,20 @@ if ($proc) {
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
 }
+
+Write-Log "COM Security"
+$Reg = [WMIClass]"\\.\root\default:StdRegProv"
+$DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
+$DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
+$DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
+$DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
+ 
+# Convert the current permissions to SDDL
+$converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
+"Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
+"Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 
 Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
