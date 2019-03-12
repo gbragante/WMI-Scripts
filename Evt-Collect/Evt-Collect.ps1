@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20190311)"
+$version = "Evt-Collect (20190312)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -205,13 +205,21 @@ EvtLogDetails "Application"
 EvtLogDetails "System"
 EvtLogDetails "Security"
 
-Write-Log "Checking permissions"
-$cmd = "cacls C:\Windows\System32\winevt\Logs >""" + $resDir + "\Permissions.txt""" + $RdrErr
+Write-Log "Checking permissions of the C:\Windows\System32\winevt\Logs folder"
+$cmd = "cacls C:\Windows\System32\winevt\Logs >>""" + $resDir + "\Permissions.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Checking permissions of the C:\Windows\System32\LogFiles\WMI\RtBackup folder"
+$cmd = "cacls C:\Windows\System32\LogFiles\WMI\RtBackup >>""" + $resDir + "\Permissions.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Listing evtx files"
 Get-ChildItem $env:windir\System32\winevt\Logs -Recurse | Out-File $resDir\WinEvtLogs.txt
+
+Write-Log "Listing RTBackup folder"
+Get-ChildItem $env:windir\System32\LogFiles\WMI\RtBackup -Recurse | Out-File $resDir\RTBackup.txt
 
 $cmd = "logman -ets query ""EventLog-Application"" >""" + $resDir + "\EventLog-Application.txt""" + $RdrErr
 Write-Log $cmd
