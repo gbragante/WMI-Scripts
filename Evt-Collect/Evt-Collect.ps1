@@ -189,21 +189,32 @@ $cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog
 Write-Log $cmd
 Invoke-Expression $cmd
 
-Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "System"
+if ((Get-Service EventLog).Status -eq "Running") {
+  Write-Log "Exporting System log"
+  $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  ArchiveLog "System"
 
-Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "Application"
+  Write-Log "Exporting Application log"
+  $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  ArchiveLog "Application"
 
-EvtLogDetails "Application"
-EvtLogDetails "System"
-EvtLogDetails "Security"
+  EvtLogDetails "Application"
+  EvtLogDetails "System"
+  EvtLogDetails "Security"
+} else {
+  Write-Log "Copying Application log"
+  if (Test-path -path C:\Windows\System32\winevt\Logs\Application.evtx) {
+    Copy-Item C:\Windows\System32\winevt\Logs\Application.evtx ($resDir + "\" + $env:computername + "-Application.evtx") -ErrorAction Continue 2>>$errfile
+  }
+  Write-Log "Copying System log"
+  if (Test-path -path C:\Windows\System32\winevt\Logs\System.evtx) {
+    Copy-Item C:\Windows\System32\winevt\Logs\System.evtx ($resDir + "\" + $env:computername + "-System.evtx") -ErrorAction Continue 2>>$errfile
+  }
+}
 
 Write-Log "Checking permissions of the C:\Windows\System32\winevt\Logs folder"
 $cmd = "cacls C:\Windows\System32\winevt\Logs >>""" + $resDir + "\Permissions.txt""" + $RdrErr
@@ -214,6 +225,9 @@ Write-Log "Checking permissions of the C:\Windows\System32\LogFiles\WMI\RtBackup
 $cmd = "cacls C:\Windows\System32\LogFiles\WMI\RtBackup >>""" + $resDir + "\Permissions.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Getting a copy of the RTBackup folder"
+Copy-Item "C:\Windows\System32\LogFiles\WMI\RtBackup" -Recurse $resDir
 
 Write-Log "Listing evtx files"
 Get-ChildItem $env:windir\System32\winevt\Logs -Recurse | Out-File $resDir\WinEvtLogs.txt
