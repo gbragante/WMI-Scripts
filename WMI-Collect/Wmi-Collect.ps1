@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20190311)"
+$version = "WMI-Collect (20190419)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -507,3 +507,8 @@ ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter" | 
 ExecQuery -Namespace "root\subscription" -Query "select * from __IntervalTimerInstruction" | Export-Clixml -Path ($subDir + "\__IntervalTimerInstruction.xml")
 ExecQuery -Namespace "root\subscription" -Query "select * from __AbsoluteTimerInstruction" | Export-Clixml -Path ($subDir + "\__AbsoluteTimerInstruction.xml")
 ExecQuery -Namespace "root\subscription" -Query "select * from __FilterToConsumerBinding" | Export-Clixml -Path ($subDir + "\__FilterToConsumerBinding.xml")
+
+Write-Log "Exporting driverquery /v output"
+$cmd = "driverquery /v >""" + $resDir + "\drivers.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
