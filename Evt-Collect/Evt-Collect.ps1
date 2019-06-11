@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20190312)"
+$version = "Evt-Collect (20190611)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -35,18 +35,20 @@ Function EvtLogDetails {
     [string] $LogName
   )
   Write-Log ("Collecting the details for the " + $LogName + " log")
-  $cmd = "wevtutil gl " + $logname + " >>""" + $resDir + "\EventLogs.txt""" + $RdrErr
+  $cmd = "wevtutil gl """ + $logname + """ >>""" + $resDir + "\EventLogs.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
   "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
 
   if ($logname -ne "ForwardedEvents") {
-    $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1 -Oldest)
-    "Oldest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
-    $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1)
-    "Newest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
-    "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+    $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1 -Oldest -ErrorAction SilentlyContinue)
+    if ($evt) {
+      "Oldest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+      $evt = (Get-WinEvent -Logname $LogName -MaxEvents 1)
+      "Newest " + $evt.TimeCreated + " (" + $evt.RecordID + ")" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+      "" | Out-File -FilePath ($resDir + "\EventLogs.txt") -Append
+    }
   }
 }
 
@@ -205,6 +207,10 @@ if ((Get-Service EventLog).Status -eq "Running") {
   EvtLogDetails "Application"
   EvtLogDetails "System"
   EvtLogDetails "Security"
+  EvtLogDetails "HardwareEvents"
+  EvtLogDetails "Internet Explorer"
+  EvtLogDetails "Key Management Service"
+  EvtLogDetails "Windows PowerShell"
 } else {
   Write-Log "Copying Application log"
   if (Test-path -path C:\Windows\System32\winevt\Logs\Application.evtx) {
@@ -227,7 +233,7 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Getting a copy of the RTBackup folder"
-Copy-Item "C:\Windows\System32\LogFiles\WMI\RtBackup" -Recurse $resDir
+Copy-Item "C:\Windows\System32\LogFiles\WMI\RtBackup" -Recurse $resDir -ErrorAction SilentlyContinue
 
 Write-Log "Listing evtx files"
 Get-ChildItem $env:windir\System32\winevt\Logs -Recurse | Out-File $resDir\WinEvtLogs.txt
