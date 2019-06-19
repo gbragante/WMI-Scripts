@@ -1,4 +1,4 @@
-# WMI-TraceParse - 20190131
+# WMI-TraceParse - 20190619
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -124,6 +124,29 @@ Function Parse-Query {
   $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
   $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
+  $tbEvt.Rows.Add($row)
+  Write-host $part
+}
+
+Function Parse-Query_ {
+  $row = $tbEvt.NewRow()
+  $row.Time = $time
+  $row.CorrelationID = FindSep -FindIn $part -Left "CorrelationId = " -Right ";"
+  $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
+  $row.OperationID = FindSep -FindIn $part -Left " OperationId = " -Right ";"
+  $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
+  $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
+  $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
+
+  if ($part -match  "MethodName =") {
+    $row.Namespace = FindSep -FindIn $part -Left "NamespaceName = " -Right "  {"
+    $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "ClassName= " -Right ";").ToLower()
+    $row.Operation = FindSep -FindIn $part -Left "MethodName = " -Right ";"
+  } else {
+    $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
+    $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
+    $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
+  }
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
@@ -265,6 +288,26 @@ while (-not $sr.EndOfStream) {
         if ($part -match  "::Connect") {
         } else {    
           Parse-Query
+        }
+      }
+    } else {
+      if ($part -match  "Stop OperationId") {
+        Parse-StopOperationID
+      } else {
+        if ($part -match  "ProviderInfo for GroupOperationId") {
+          Parse-ProviderInfo
+        }
+      }
+    }
+  }
+
+  if ($part -match  "\[Microsoft_Windows_WMI_Activity/Trace") { 
+    if ($part -match  "CorrelationId =") {  
+      if ($part -match  "Protocol = DCOM") {
+      } else {
+        if ($part -match  "::Connect") {
+        } else {    
+          Parse-Query_
         }
       }
     } else {
