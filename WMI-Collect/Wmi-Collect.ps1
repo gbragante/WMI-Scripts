@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20190624)"
+$version = "WMI-Collect (20191015)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -46,6 +46,8 @@ Function Win10Ver {
     return " (RS4 / 1803)"
   } elseif ($build -eq 17763) {
     return " (RS5 / 1809)"
+  } elseif ($build -eq 18362) {
+    return " (19H1 / 1903)"
   }
 }
 
@@ -89,6 +91,18 @@ Function FileVersion {
   } else {
     return ""
   }
+}
+
+Function GetOwnerCim{
+  param( $prc )
+  $ret = Invoke-CimMethod -InputObject $prc -MethodName GetOwner
+  return ($ret.Domain + "\" + $ret.User)
+}
+
+Function GetOwnerWmi{
+  param( $prc )
+  $ret = $prc.GetOwner()
+  return ($ret.Domain + "\" + $ret.User)
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -282,11 +296,13 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPrvSE.exe") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $true
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
+$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
+  $Owner = @{N="User";E={(GetOwnerCim($_))}}
 } else {
   $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
+  $Owner = @{N="User";E={(GetOwnerWmi($_))}}
 }
 
 if ($proc) {
@@ -294,7 +310,7 @@ if ($proc) {
   Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
   @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
-  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, CommandLine |
+  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, @{N="State";E={($_.ExecutionState)}}, $StartTime, $Owner, CommandLine |
   Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
 
   Write-Log "Retrieving file version of running binaries"
