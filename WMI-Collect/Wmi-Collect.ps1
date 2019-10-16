@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20191015)"
+$version = "WMI-Collect (20191016)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -48,6 +48,8 @@ Function Win10Ver {
     return " (RS5 / 1809)"
   } elseif ($build -eq 18362) {
     return " (19H1 / 1903)"
+  } elseif ($build -eq 18363) {
+    return " (19H2 / 1909)"  
   }
 }
 
