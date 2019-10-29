@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20191016)"
+$version = "WMI-Collect (20191029)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -296,6 +296,7 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\wbemcore.dll") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\repdrvfs.dll") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPrvSE.exe") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $true
+FileVersion -Filepath ($env:windir + "\system32\wbem\WmiApRpl.dll") -Log $true
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
