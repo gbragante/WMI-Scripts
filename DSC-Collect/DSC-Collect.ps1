@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20181204)"
+$version = "DSC-Collect (20191211)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -28,6 +28,27 @@ Function ArchiveLog {
   $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
   Write-Log $cmd
   Invoke-Expression $cmd
+}
+
+Function Win10Ver {
+  param(
+    [string] $Build
+  )
+  if ($build -eq 14393) {
+    return " (RS1 / 1607)"
+  } elseif ($build -eq 15063) {
+    return " (RS2 / 1703)"
+  } elseif ($build -eq 16299) {
+    return " (RS3 / 1709)"
+  } elseif ($build -eq 17134) {
+    return " (RS4 / 1803)"
+  } elseif ($build -eq 17763) {
+    return " (RS5 / 1809)"
+  } elseif ($build -eq 18362) {
+    return " (19H1 / 1903)"
+  } elseif ($build -eq 18363) {
+    return " (19H2 / 1909)"  
+  }
 }
 
 Add-Type -MemberDefinition @"
@@ -118,8 +139,10 @@ if (Test-Path -Path "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\Config\web.
 }
 
 $dir = $env:windir + "\system32\logfiles\HTTPERR"
-$last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
-Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+if (Test-Path -path $dir) {
+  $last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
+  Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
+}
 
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
   $cmd = "cmd.exe /c esentutl.exe /y ""C:\Program Files\WindowsPowerShell\DscService\Devices.edb"" /vssrec"
@@ -144,6 +167,11 @@ if (Test-Path -Path "C:\WindowsAzure\Logs\Plugins\Microsoft.Powershell.DSC") {
 if (Test-Path -Path "C:\Packages\Plugins\Microsoft.Powershell.DSC") {
   Write-Log "Azure DSC Extension Package"
   Copy-Item "C:\Packages\Plugins\Microsoft.Powershell.DSC" -Recurse ($resDir + "\AzureDSCPackage")
+}
+
+if (Test-Path -Path "C:\Windows\Temp\ScriptLog.log") {
+  Write-Log "Windows Virtual Desktop log"
+  Copy-Item "C:\Windows\Temp\ScriptLog.log" ($resDir + "\WVD-ScriptLog.log")
 }
 
 if (Test-Path -Path "HKLM:\SOFTWARE\Microsoft\Azure\DSC") {
@@ -175,10 +203,6 @@ Get-DscConfiguration | Out-File -FilePath ($resDir + "\Get-DscConfiguration.txt"
 
 Write-Log "Get-DscConfigurationStatus output"
 Get-DscConfigurationStatus -all 2>>$errfile | Out-File -FilePath ($resDir + "\Get-DscConfigurationStatus.txt")
-
-#Get-ChildItem IIS:\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
-#Get-ChildItem IIS:\AppPools\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
-#Get-ChildItem IIS:\AppPools\PSWS\WorkerProcesses\ -Recurse -ErrorAction Continue 2>>$errfile | out-string -Width 500 | out-file -FilePath ($resDir + "\IIS-config.txt") -Append
 
 $dir = $env:windir + "\system32\inetsrv"
 if (Test-Path -Path $dir) {
@@ -251,10 +275,6 @@ Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "WindowsRemoteManagement"
 
-$dir = $env:windir + "\system32\logfiles\HTTPERR"
-$last = Get-ChildItem -path ($dir) | Sort CreationTime -Descending | Select Name -First 1 
-Copy-Item ($dir + "\" + $last.name) $resDir\httperr.log -ErrorAction Continue 2>>$errfile
-
 Write-Log "WinHTTP proxy configuration"
 $cmd = "netsh winhttp show proxy >""" + $resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
 Write-Log $cmd
@@ -294,7 +314,7 @@ if ($proc) {
 
   Write-Log "Collecting system information"
   $pad = 27
-  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles from Win32_OperatingSystem"
+  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
   $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
   $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
@@ -304,7 +324,7 @@ if ($proc) {
   $PoolPaged = $ctr.CounterSamples[0].CookedValue 
   $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
   $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
-  
+
   "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
@@ -320,9 +340,9 @@ if ($proc) {
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Installation type".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").InstallationType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
