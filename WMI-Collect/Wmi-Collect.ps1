@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20191029)"
+$version = "WMI-Collect (20200108)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -235,6 +235,16 @@ Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole """+ $resDir + "\Ole.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
 Invoke-Expression $cmd
 
+Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Rpc"
+$cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Rpc """+ $resDir + "\Rpc.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+Invoke-Expression $cmd
+
+if (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Rpc") {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Rpc"
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Rpc"" """ + $resDir + "\Rpc-policies.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+  Invoke-Expression $cmd
+}
+
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
 Invoke-Expression $cmd
@@ -387,6 +397,8 @@ if ($proc) {
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+
+  ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor | Out-String -Width 400 | Out-File -FilePath ($resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
