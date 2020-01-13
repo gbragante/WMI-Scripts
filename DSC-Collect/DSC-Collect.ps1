@@ -1,4 +1,4 @@
-$version = "DSC-Collect (20191211)"
+$version = "DSC-Collect (20200113)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -107,6 +107,8 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\RegistrationK
   Copy-Item "C:\Program Files\WindowsPowerShell\DscService\RegistrationKeys.txt" ($resDir + "\RegistrationKeys.txt")
 }
 
+
+$DSCDb = "C:\Program Files\WindowsPowerShell\DscService\Devices.edb"
 if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.config")) {
   Write-Log "IIS ApplicationHost.config"
   Copy-Item "C:\Windows\System32\inetsrv\Config\ApplicationHost.config" ($resDir + "\ApplicationHost.config")
@@ -128,6 +130,13 @@ if (Test-Path -Path ($env:windir + "\System32\inetsrv\Config\ApplicationHost.con
 
       if ($site.name -eq "PSDSCPullServer") {
         GetFileVersion ($path + "\bin\Microsoft.Powershell.DesiredStateConfiguration.Service.dll")
+        $docDSC = (Get-content ($path + "\web.config")) -as [xml]
+        foreach ($conf in $docDSC.configuration.appSettings.add) {
+          if ($conf.key -eq "dbconnectionstr") {
+            $DSCDb = $conf.value
+            Write-Log ("DSC dbconnectionstr = " + $DSCDb )
+          }
+        }
       }
     }
   }
@@ -145,7 +154,7 @@ if (Test-Path -path $dir) {
 }
 
 if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\Devices.edb") {
-  $cmd = "cmd.exe /c esentutl.exe /y ""C:\Program Files\WindowsPowerShell\DscService\Devices.edb"" /vssrec"
+  $cmd = "cmd.exe /c esentutl.exe /y """ + $DSCDb +  """ /vssrec"
   Write-Log $cmd
   Invoke-Expression $cmd
   Move-Item .\Devices.edb $resDir
