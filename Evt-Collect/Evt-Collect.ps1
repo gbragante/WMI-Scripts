@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20191031)"
+$version = "Evt-Collect (20200113)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -66,6 +66,8 @@ Function Win10Ver {
     return " (RS4 / 1803)"
   } elseif ($build -eq 17763) {
     return " (RS5 / 1809)"
+  } elseif ($build -eq 18362) {
+    return " (19H1 / 1903)"
   }
 }
 
@@ -208,6 +210,12 @@ if ((Get-Service EventLog).Status -eq "Running") {
   Write-Log $cmd
   Invoke-Expression $cmd
   ArchiveLog "Application"
+
+  Write-Log "Exporting Kernel-EventTracing log"
+  $cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  ArchiveLog "EventTracing"
 
   EvtLogDetails "Application"
   EvtLogDetails "System"
