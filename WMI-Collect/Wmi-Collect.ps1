@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200108)"
+$version = "WMI-Collect (20200203)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -217,7 +217,7 @@ $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 Write-Log "Listing WBEM folder"
 Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
 
-Write-Log "Exporting WMIPrvSE AppIDs registration keys"
+Write-Log "Exporting WMIPrvSE AppIDs and CLSIDs registration keys"
 $cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """ + $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
@@ -228,6 +228,9 @@ $cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{73E709EA-5D93-4B2E-BBB0
 Write-Log $cmd
 Invoke-Expression $cmd
 $cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{1F87137D-0E7C-44d5-8C73-4EFFB68962F2}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
+Write-Log $cmd
+Invoke-Expression $cmd
+$cmd = "reg query ""HKEY_CLASSES_ROOT\CLSID\{4DE225BF-CF59-4CFC-85F7-68B90F185355}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 
