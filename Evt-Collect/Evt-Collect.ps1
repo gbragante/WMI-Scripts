@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20200113)"
+$version = "Evt-Collect (20200309)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -68,6 +68,8 @@ Function Win10Ver {
     return " (RS5 / 1809)"
   } elseif ($build -eq 18362) {
     return " (19H1 / 1903)"
+  } elseif ($build -eq 18363) {
+    return " (19H2 / 1909)"  
   }
 }
 
@@ -148,6 +150,14 @@ if (-not (Test-Path ($root + "\" + $procdump))) {
   $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
   if ($confirm.ToLower() -ne "y") {exit}
 }
+
+Write-Host "This script is designed to collect information that will help Microsoft Customer Support Services (CSS) troubleshoot an issue you may be experiencing with Windows."
+Write-Host "The collected data may contain Personally Identifiable Information (PII) and/or sensitive data, such as (but not limited to) IP addresses, PC names, and user names."
+Write-Host "Once the tracing and data collection has completed, the script will save the data in a subfolder. This folder is not automatically sent to Microsoft."
+Write-Host "You can send this folder to Microsoft CSS using a secure file transfer tool - Please discuss this with your support professional and also any concerns you may have."
+Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us/privacy"
+$confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
+if ($confirm.ToLower() -ne "y") {exit}
 
 Write-Log "Collecting dump of the svchost process hosting the EventLog service"
 $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma EventLog """ + $resDir + "\Svchost.exe-EventLog.dmp""" + $RdrOut + $RdrErr
