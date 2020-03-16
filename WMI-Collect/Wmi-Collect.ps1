@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200203)"
+$version = "WMI-Collect (20200316)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -401,7 +401,7 @@ if ($proc) {
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 
-  ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor | Out-String -Width 400 | Out-File -FilePath ($resDir + "\products.txt")
+  ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
