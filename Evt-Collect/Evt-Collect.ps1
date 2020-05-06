@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20200309)"
+$version = "Evt-Collect (20200506)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -182,6 +182,14 @@ Write-Log "Collecing Auditpol output"
 $cmd = "auditpol /get /category:* > """ + $resDir + "\auditpol.txt""" + $RdrErr
 write-log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Checking lost events for each EventLog etw session"
+("EventLog-Application : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-Application)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($resDir + "\EventsLost.txt") -Append
+("EventLog-System : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-System)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($resDir + "\EventsLost.txt") -Append
+("EventLog-Security : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-Security)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($resDir + "\EventsLost.txt") -Append
+if (Get-AutologgerConfig "EventLog-ForwardedEvents" -ErrorAction SilentlyContinue) {
+  ("EventLog-ForwardedEvents : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-ForwardedEvents)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($resDir + "\EventsLost.txt") -Append
+}
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\WMI\Autologger"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\WMI\Autologger """ + $resDir + "\WMI-Autologger.reg.txt"" /y " + $RdrOut + $RdrErr
