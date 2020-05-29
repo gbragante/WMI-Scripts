@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200316)"
+$version = "WMI-Collect (20200529)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -122,7 +122,6 @@ Write-Host "You can send this folder to Microsoft CSS using a secure file transf
 Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us/privacy"
 $confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
 if ($confirm.ToLower() -ne "y") {exit}
-
 
 $Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 if ($Path) {
@@ -321,7 +320,7 @@ if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $Owner = @{N="User";E={(GetOwnerWmi($_))}}
 }
 
-if ($proc) {
+if ($proc.count -gt 3) {
   $proc | Sort-Object Name |
   Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
   @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
@@ -409,6 +408,8 @@ if ($proc) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+  Write-Log "Exiting since WMI is not working"
+  exit
 }
 
 Write-Log "COM Security"
