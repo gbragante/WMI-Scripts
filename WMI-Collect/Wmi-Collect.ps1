@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200529)"
+$version = "WMI-Collect (20200629)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -49,7 +49,9 @@ Function Win10Ver {
   } elseif ($build -eq 18362) {
     return " (19H1 / 1903)"
   } elseif ($build -eq 18363) {
-    return " (19H2 / 1909)"  
+    return " (19H2 / 1909)"    
+  } elseif ($build -eq 19041) {
+    return " (20H1 / 2004)"  
   }
 }
 
@@ -63,6 +65,7 @@ public static extern int NetGetJoinInformation(
   out int BufferType);
 "@ -Namespace Win32Api -Name NetApi32
 
+
 function GetNBDomainName {
   $pNameBuffer = [IntPtr]::Zero
   $joinStatus = 0
@@ -74,6 +77,99 @@ function GetNBDomainName {
   if ( $apiResult -eq 0 ) {
     [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
     [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
+  }
+}
+
+$UserDumpCode=@'
+using System;
+using System.Runtime.InteropServices;
+
+namespace MSDATA
+{
+    public static class UserDump
+    {
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessID);
+        [DllImport("dbghelp.dll", EntryPoint = "MiniDumpWriteDump", CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        public static extern bool MiniDumpWriteDump(IntPtr hProcess, uint processId, SafeHandle hFile, uint dumpType, IntPtr expParam, IntPtr userStreamParam, IntPtr callbackParam);
+
+        private enum MINIDUMP_TYPE
+        {
+            MiniDumpNormal = 0x00000000,
+            MiniDumpWithDataSegs = 0x00000001,
+            MiniDumpWithFullMemory = 0x00000002,
+            MiniDumpWithHandleData = 0x00000004,
+            MiniDumpFilterMemory = 0x00000008,
+            MiniDumpScanMemory = 0x00000010,
+            MiniDumpWithUnloadedModules = 0x00000020,
+            MiniDumpWithIndirectlyReferencedMemory = 0x00000040,
+            MiniDumpFilterModulePaths = 0x00000080,
+            MiniDumpWithProcessThreadData = 0x00000100,
+            MiniDumpWithPrivateReadWriteMemory = 0x00000200,
+            MiniDumpWithoutOptionalData = 0x00000400,
+            MiniDumpWithFullMemoryInfo = 0x00000800,
+            MiniDumpWithThreadInfo = 0x00001000,
+            MiniDumpWithCodeSegs = 0x00002000
+        };
+
+        public static bool GenerateUserDump(uint ProcessID, string dumpFileName)
+        {
+            System.IO.FileStream fileStream = System.IO.File.OpenWrite(dumpFileName);
+
+            if (fileStream == null)
+            {
+                return false;
+            }
+
+            // 0x1F0FFF = PROCESS_ALL_ACCESS
+            IntPtr ProcessHandle = OpenProcess(0x1F0FFF, false, ProcessID);
+
+            if(ProcessHandle == null)
+            {
+                return false;
+            }
+
+            MINIDUMP_TYPE Flags =
+                MINIDUMP_TYPE.MiniDumpWithFullMemory |
+                MINIDUMP_TYPE.MiniDumpWithFullMemoryInfo |
+                MINIDUMP_TYPE.MiniDumpWithHandleData |
+                MINIDUMP_TYPE.MiniDumpWithUnloadedModules |
+                MINIDUMP_TYPE.MiniDumpWithThreadInfo;
+
+            bool Result = MiniDumpWriteDump(ProcessHandle,
+                                 ProcessID,
+                                 fileStream.SafeFileHandle,
+                                 (uint)Flags,
+                                 IntPtr.Zero,
+                                 IntPtr.Zero,
+                                 IntPtr.Zero);
+
+            fileStream.Close();
+            return Result;
+        }
+    }
+}
+'@
+add-type -TypeDefinition $UserDumpCode -Language CSharp
+
+Function CreateProcDump {
+  param( $ProcID, $DumpFolder, $filename)
+  if (-not (Test-Path $DumpFolder)) {
+    Write-host ("The folder " + $DumpFolder + " does not exist")
+    return $false
+  }
+  $proc = Get-Process -ID $ProcID
+  if (-not $proc) {
+    Write-Log ("The process with PID $ProcID is not running")
+    return $false
+  }
+  if (-not $Filename) { $filename = $proc.Name }
+  $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
+  
+  if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+    Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
+  } else {
+    Write-Log "Failed to create the dump for the Process ID $ProcID"
   }
 }
 
@@ -141,21 +237,25 @@ New-Item -itemtype directory -path $subDir | Out-Null
 $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 
-if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
-  $procdump = "procdump64.exe"
-} else {
-  $procdump = "procdump.exe"
-}
-if (-not (Test-Path ($root + "\" + $procdump))) {
-  $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
-  if ($confirm.ToLower() -ne "y") {exit}
+Write-Log $version
+
+Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
+$list = Get-Process
+$found = $false
+if (($list | measure).count -gt 0) {
+  foreach ($proc in $list) {
+    $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
+    if (($prov | measure).count -gt 0) {
+      CreateProcDump $proc.id $resDir "scvhost-WinMgmt"
+      $found = $true
+      break
+    }
+  }
 }
 
-Write-Log $version
-Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WinMgmt """ + $resDir + "\Svchost.exe-WinMgmt.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
+if (-not $found) {
+  Write-Log "Cannot find any process having wmisvc.dll loaded, probably the WMI service is not running"
+}
 
 Write-Log "Collecing the dumps of WMIPrvSE.exe processes"
 $list = get-process -Name "WmiPrvSe" -ErrorAction Continue 2>>$errfile
@@ -163,9 +263,7 @@ if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found WMIPrvSE.exe with PID " + $proc.Id)
-    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\WMIPrvSE.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-    Write-Log $cmd
-    Invoke-Expression $cmd
+    CreateProcDump $proc.id $resDir
   }
 } else {
   Write-Log "No WMIPrvSE.exe processes found"
@@ -179,27 +277,23 @@ if (($list | measure).count -gt 0) {
     $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
     if (($prov | measure).count -gt 0) {
       Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
-      $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\"+ $proc.name + ".exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-      Write-Log $cmd
-      Invoke-Expression $cmd
+      CreateProcDump $proc.id $resDir
     }
   }
 }
 
-Write-Log "Collecting dump of the WmiApSrv.exe process"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma WmiApSrv.exe """ + $resDir + "\WmiApSrv.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
+$proc = get-process "WmiApSrv" -ErrorAction SilentlyContinue
+if ($proc) {
+  Write-Log "Collecting dump of the WmiApSrv.exe process"
+  CreateProcDump $proc.id $resDir
+}
 
 Write-Log "Collecing the dumps of scrcons.exe processes"
 $list = get-process -Name "scrcons" -ErrorAction SilentlyContinue 2>>$errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
-    Write-Log ("Found scrcons.exe with PID " + $proc.Id)
-    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma " + $proc.Id + " """+ $resDir + "\scrcons.exe_"+ $proc.id + ".dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-    Write-Log $cmd
-    Invoke-Expression $cmd
+    CreateProcDump $proc.id $resDir
   }
 } else {
   Write-Log "No scrcons.exe processes found"
