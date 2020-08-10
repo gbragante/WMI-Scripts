@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20200506)"
+$version = "Evt-Collect (20200810)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -70,6 +70,8 @@ Function Win10Ver {
     return " (19H1 / 1903)"
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"  
+  } elseif ($build -eq 19041) {
+    return " (20H1 / 2004)" 
   }
 }
 
@@ -115,6 +117,173 @@ function GetNBDomainName {
   }
 }
 
+$UserDumpCode=@'
+using System;
+using System.Runtime.InteropServices;
+
+namespace MSDATA
+{
+    public static class UserDump
+    {
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessID);
+        [DllImport("dbghelp.dll", EntryPoint = "MiniDumpWriteDump", CallingConvention = CallingConvention.Winapi, CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        public static extern bool MiniDumpWriteDump(IntPtr hProcess, uint processId, SafeHandle hFile, uint dumpType, IntPtr expParam, IntPtr userStreamParam, IntPtr callbackParam);
+
+        private enum MINIDUMP_TYPE
+        {
+            MiniDumpNormal = 0x00000000,
+            MiniDumpWithDataSegs = 0x00000001,
+            MiniDumpWithFullMemory = 0x00000002,
+            MiniDumpWithHandleData = 0x00000004,
+            MiniDumpFilterMemory = 0x00000008,
+            MiniDumpScanMemory = 0x00000010,
+            MiniDumpWithUnloadedModules = 0x00000020,
+            MiniDumpWithIndirectlyReferencedMemory = 0x00000040,
+            MiniDumpFilterModulePaths = 0x00000080,
+            MiniDumpWithProcessThreadData = 0x00000100,
+            MiniDumpWithPrivateReadWriteMemory = 0x00000200,
+            MiniDumpWithoutOptionalData = 0x00000400,
+            MiniDumpWithFullMemoryInfo = 0x00000800,
+            MiniDumpWithThreadInfo = 0x00001000,
+            MiniDumpWithCodeSegs = 0x00002000
+        };
+
+        public static bool GenerateUserDump(uint ProcessID, string dumpFileName)
+        {
+            System.IO.FileStream fileStream = System.IO.File.OpenWrite(dumpFileName);
+
+            if (fileStream == null)
+            {
+                return false;
+            }
+
+            // 0x1F0FFF = PROCESS_ALL_ACCESS
+            IntPtr ProcessHandle = OpenProcess(0x1F0FFF, false, ProcessID);
+
+            if(ProcessHandle == null)
+            {
+                return false;
+            }
+
+            MINIDUMP_TYPE Flags =
+                MINIDUMP_TYPE.MiniDumpWithFullMemory |
+                MINIDUMP_TYPE.MiniDumpWithFullMemoryInfo |
+                MINIDUMP_TYPE.MiniDumpWithHandleData |
+                MINIDUMP_TYPE.MiniDumpWithUnloadedModules |
+                MINIDUMP_TYPE.MiniDumpWithThreadInfo;
+
+            bool Result = MiniDumpWriteDump(ProcessHandle,
+                                 ProcessID,
+                                 fileStream.SafeFileHandle,
+                                 (uint)Flags,
+                                 IntPtr.Zero,
+                                 IntPtr.Zero,
+                                 IntPtr.Zero);
+
+            fileStream.Close();
+            return Result;
+        }
+    }
+}
+'@
+add-type -TypeDefinition $UserDumpCode -Language CSharp
+
+Function CreateProcDump {
+  param( $ProcID, $DumpFolder, $filename)
+  if (-not (Test-Path $DumpFolder)) {
+    Write-host ("The folder " + $DumpFolder + " does not exist")
+    return $false
+  }
+  $proc = Get-Process -ID $ProcID
+  if (-not $proc) {
+    Write-Log ("The process with PID $ProcID is not running")
+    return $false
+  }
+  if (-not $Filename) { $filename = $proc.Name }
+  $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
+  
+  if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+    Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
+  } else {
+    Write-Log "Failed to create the dump for the Process ID $ProcID"
+  }
+}
+
+$FindPIDCode=@'
+using System;
+using System.ServiceProcess;
+using System.Diagnostics;
+using System.Threading;
+using System.Runtime.InteropServices;
+
+namespace MSDATA {
+  public static class FindService {
+
+    public static void Main(){
+	  Console.WriteLine("Hello world!");
+	}
+
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    public struct SERVICE_STATUS_PROCESS {
+      public int serviceType;
+      public int currentState;
+      public int controlsAccepted;
+      public int win32ExitCode;
+      public int serviceSpecificExitCode;
+      public int checkPoint;
+      public int waitHint;
+      public int processID;
+      public int serviceFlags;
+    }
+
+    [DllImport("advapi32.dll")]
+    public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
+
+    public static int FindServicePid(string SvcName) {
+      //Console.WriteLine("Hello world!");
+      ServiceController sc = new ServiceController(SvcName);
+      if (sc == null) {
+        return -1;
+      }
+                  
+      IntPtr zero = IntPtr.Zero;
+      int SC_STATUS_PROCESS_INFO = 0;
+      int ERROR_INSUFFICIENT_BUFFER = 0;
+
+      Int32 dwBytesNeeded;
+      System.IntPtr hs = sc.ServiceHandle.DangerousGetHandle();
+
+      // Call once to figure the size of the output buffer.
+      QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, 0, out dwBytesNeeded);
+      if (Marshal.GetLastWin32Error() == ERROR_INSUFFICIENT_BUFFER) {
+        // Allocate required buffer and call again.
+        zero = Marshal.AllocHGlobal((int)dwBytesNeeded);
+
+        if (QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, dwBytesNeeded, out dwBytesNeeded)) {
+          SERVICE_STATUS_PROCESS ssp = (SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(zero, typeof(SERVICE_STATUS_PROCESS));
+          return (int)ssp.processID;
+        }
+      }
+      return -1;
+    }
+  }
+}
+'@
+
+add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+
+Function FindServicePid {
+  param( $SvcName)
+  try {
+    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    return $pidsvc
+  }
+  catch {
+    return $null
+  }
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -141,16 +310,6 @@ New-Item -itemtype directory -path $subDir | Out-Null
 
 Write-Log $version
 
-if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
-  $procdump = "procdump64.exe"
-} else {
-  $procdump = "procdump.exe"
-}
-if (-not (Test-Path ($root + "\" + $procdump))) {
-  $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
-  if ($confirm.ToLower() -ne "y") {exit}
-}
-
 Write-Host "This script is designed to collect information that will help Microsoft Customer Support Services (CSS) troubleshoot an issue you may be experiencing with Windows."
 Write-Host "The collected data may contain Personally Identifiable Information (PII) and/or sensitive data, such as (but not limited to) IP addresses, PC names, and user names."
 Write-Host "Once the tracing and data collection has completed, the script will save the data in a subfolder. This folder is not automatically sent to Microsoft."
@@ -159,10 +318,11 @@ Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us
 $confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
 if ($confirm.ToLower() -ne "y") {exit}
 
-Write-Log "Collecting dump of the svchost process hosting the EventLog service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma EventLog """ + $resDir + "\Svchost.exe-EventLog.dmp""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
+Write-Log "Collecting dump of the svchost process hosting the WinRM service"
+$pidEventLog = FindServicePid "EventLog"
+if ($pidEventLog) {
+  CreateProcDump $pidEventLog $resDir "scvhost-EventLog"
+}
 
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
