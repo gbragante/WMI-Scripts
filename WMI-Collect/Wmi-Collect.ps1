@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200629)"
+$version = "WMI-Collect (20200810)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -173,6 +173,80 @@ Function CreateProcDump {
   }
 }
 
+$FindPIDCode=@'
+using System;
+using System.ServiceProcess;
+using System.Diagnostics;
+using System.Threading;
+using System.Runtime.InteropServices;
+
+namespace MSDATA {
+  public static class FindService {
+
+    public static void Main(){
+	  Console.WriteLine("Hello world!");
+	}
+
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    public struct SERVICE_STATUS_PROCESS {
+      public int serviceType;
+      public int currentState;
+      public int controlsAccepted;
+      public int win32ExitCode;
+      public int serviceSpecificExitCode;
+      public int checkPoint;
+      public int waitHint;
+      public int processID;
+      public int serviceFlags;
+    }
+
+    [DllImport("advapi32.dll")]
+    public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
+
+    public static int FindServicePid(string SvcName) {
+      //Console.WriteLine("Hello world!");
+      ServiceController sc = new ServiceController(SvcName);
+      if (sc == null) {
+        return -1;
+      }
+                  
+      IntPtr zero = IntPtr.Zero;
+      int SC_STATUS_PROCESS_INFO = 0;
+      int ERROR_INSUFFICIENT_BUFFER = 0;
+
+      Int32 dwBytesNeeded;
+      System.IntPtr hs = sc.ServiceHandle.DangerousGetHandle();
+
+      // Call once to figure the size of the output buffer.
+      QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, 0, out dwBytesNeeded);
+      if (Marshal.GetLastWin32Error() == ERROR_INSUFFICIENT_BUFFER) {
+        // Allocate required buffer and call again.
+        zero = Marshal.AllocHGlobal((int)dwBytesNeeded);
+
+        if (QueryServiceStatusEx(hs, SC_STATUS_PROCESS_INFO, zero, dwBytesNeeded, out dwBytesNeeded)) {
+          SERVICE_STATUS_PROCESS ssp = (SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(zero, typeof(SERVICE_STATUS_PROCESS));
+          return (int)ssp.processID;
+        }
+      }
+      return -1;
+    }
+  }
+}
+'@
+
+add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+
+Function FindServicePid {
+  param( $SvcName)
+  try {
+    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    return $pidsvc
+  }
+  catch {
+    return $null
+  }
+}
+
 Function FileVersion {
   param(
     [string] $FilePath,
@@ -240,21 +314,28 @@ $errfile = $resDir + "\script-errors.txt"
 Write-Log $version
 
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
-$list = Get-Process
-$found = $false
-if (($list | measure).count -gt 0) {
-  foreach ($proc in $list) {
-    $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
-    if (($prov | measure).count -gt 0) {
-      CreateProcDump $proc.id $resDir "scvhost-WinMgmt"
-      $found = $true
-      break
+$pidsvc = FindServicePid "winmgmt"
+if ($pidsvc) {
+  Write-Log "Found the PID using FindServicePid"
+  CreateProcDump $pidsvc $resDir "scvhost-WinMgmt"
+} else {
+  Write-Log "Cannot find the PID using FindServicePid, looping through processes"
+  $list = Get-Process
+  $found = $false
+  if (($list | measure).count -gt 0) {
+    foreach ($proc in $list) {
+      $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
+      if (($prov | measure).count -gt 0) {
+        Write-Log "Found the PID having wmisvc.dll loaded"
+        CreateProcDump $proc.id $resDir "scvhost-WinMgmt"
+        $found = $true
+        break
+      }
     }
   }
-}
-
-if (-not $found) {
-  Write-Log "Cannot find any process having wmisvc.dll loaded, probably the WMI service is not running"
+  if (-not $found) {
+    Write-Log "Cannot find any process having wmisvc.dll loaded, probably the WMI service is not running"
+  }
 }
 
 Write-Log "Collecing the dumps of WMIPrvSE.exe processes"
