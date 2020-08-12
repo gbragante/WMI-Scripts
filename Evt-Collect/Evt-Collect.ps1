@@ -1,4 +1,4 @@
-$version = "Evt-Collect (20200810)"
+$version = "Evt-Collect (20200812)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -318,7 +318,7 @@ Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us
 $confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
 if ($confirm.ToLower() -ne "y") {exit}
 
-Write-Log "Collecting dump of the svchost process hosting the WinRM service"
+Write-Log "Collecting dump of the svchost process hosting the EventLog service"
 $pidEventLog = FindServicePid "EventLog"
 if ($pidEventLog) {
   CreateProcDump $pidEventLog $resDir "scvhost-EventLog"
