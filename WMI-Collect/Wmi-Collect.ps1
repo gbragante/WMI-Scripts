@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200810)"
+$version = "WMI-Collect (20200914)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -158,6 +158,8 @@ Function CreateProcDump {
     Write-host ("The folder " + $DumpFolder + " does not exist")
     return $false
   }
+  $DumpCreated = $false
+
   $proc = Get-Process -ID $ProcID
   if (-not $proc) {
     Write-Log ("The process with PID $ProcID is not running")
@@ -166,10 +168,31 @@ Function CreateProcDump {
   if (-not $Filename) { $filename = $proc.Name }
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
-  if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
-    Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
-  } else {
-    Write-Log "Failed to create the dump for the Process ID $ProcID"
+  if (Test-Path ($root + "\" + $procdump)) {
+    $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $outfile + """ 2>>""" + $errfile + """"
+    Write-Log $cmd
+    Invoke-Expression $cmd
+
+    if (Test-Path $DumpFile) {
+      if ((Get-Item $DumpFile).length -gt 1000) {
+        $DumpCreated = $true
+        Write-Log "Successfully created $DumpFile with ProcDump"
+      } else {
+        Write-Log "The created dump file is too small, removing it"
+        Remove-Item $DumpFile
+      }
+    } else {
+      Write-Log "Cannot find the dump file"
+    }
+  }
+
+  if (-not $DumpCreated) {
+    Write-Log "Cannot create the dump with ProcDump, trying the backup method"
+    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+      Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
+    } else {
+      Write-Log "Failed to create the dump for the Process ID $ProcID"
+    }
   }
 }
 
@@ -312,6 +335,12 @@ $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 
 Write-Log $version
+
+if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
+  $procdump = "procdump64.exe"
+} else {
+  $procdump = "procdump.exe"
+}
 
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
 $pidsvc = FindServicePid "winmgmt"
