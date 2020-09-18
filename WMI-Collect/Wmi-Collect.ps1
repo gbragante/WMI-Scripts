@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200914)"
+$version = "WMI-Collect (20200918)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -368,7 +368,7 @@ if ($pidsvc) {
 }
 
 Write-Log "Collecing the dumps of WMIPrvSE.exe processes"
-$list = get-process -Name "WmiPrvSe" -ErrorAction Continue 2>>$errfile
+$list = get-process -Name "WmiPrvSe" -ErrorAction SilentlyContinue 2>>$errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
