@@ -1,4 +1,4 @@
-$version = "Perf-Collect (20200309)"
+$version = "Perf-Collect (20201124)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -21,6 +21,62 @@ Function ExecQuery {
   }
   Write-Log (($ret | measure).count.ToString() + " results")
   return $ret
+}
+
+Function ArchiveLog {
+  param( [string] $LogName )
+  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
+  Write-Log $cmd
+  Invoke-Expression $cmd
+}
+
+Function Win10Ver {
+  param(
+    [string] $Build
+  )
+  if ($build -eq 14393) {
+    return " (RS1 / 1607)"
+  } elseif ($build -eq 15063) {
+    return " (RS2 / 1703)"
+  } elseif ($build -eq 16299) {
+    return " (RS3 / 1709)"
+  } elseif ($build -eq 17134) {
+    return " (RS4 / 1803)"
+  } elseif ($build -eq 17763) {
+    return " (RS5 / 1809)"
+  } elseif ($build -eq 18362) {
+    return " (19H1 / 1903)"
+  } elseif ($build -eq 18363) {
+    return " (19H2 / 1909)"    
+  } elseif ($build -eq 19041) {
+    return " (20H1 / 2004)"  
+  } elseif ($build -eq 19042) {
+    return " (20H2)"  
+  }
+}
+
+Add-Type -MemberDefinition @"
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern uint NetApiBufferFree(IntPtr Buffer);
+[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern int NetGetJoinInformation(
+  string server,
+  out IntPtr NameBuffer,
+  out int BufferType);
+"@ -Namespace Win32Api -Name NetApi32
+
+function GetNBDomainName {
+  $pNameBuffer = [IntPtr]::Zero
+  $joinStatus = 0
+  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
+    $null,               # lpServer
+    [Ref] $pNameBuffer,  # lpNameBuffer
+    [Ref] $joinStatus    # BufferType
+  )
+  if ( $apiResult -eq 0 ) {
+    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
+    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
+  }
 }
 
 $tbPerfV1 = New-Object system.Data.DataTable “Perf”
@@ -168,6 +224,11 @@ $cmd = $env:windir + "\SysWOW64\typeperf.exe -q > """ + $resDir + "\typeperf32.t
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
+Write-Log "Exporting perf registry strings"
+$cmd = "lodctr /s:""" + $resdir + "\PerfRegistryStrings.ini""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
 Write-Log "Enumerating 32bit performance counters"
 $cmd = $env:windir + "\SysWOW64\typeperf.exe -qx > """ + $resDir + "\typeperf32-inst.txt""" + $RdrErr
 Write-Log $cmd
@@ -186,13 +247,26 @@ $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.ev
 Write-Log $cmd
 Invoke-Expression $cmd
 
+Write-Log "Collecting services details"
+$svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
+
+if ($svc) {
+  $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
+  Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
+}
+
 Write-Log "Collecting system information"
 $pad = 27
-$OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles from Win32_OperatingSystem"
-$CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain from Win32_ComputerSystem"
+$OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
+$CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
 $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
 $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
 $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
+
+$ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$errfile
+$PoolPaged = $ctr.CounterSamples[0].CookedValue 
+$ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
+$PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
 
 "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
@@ -205,13 +279,36 @@ $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_
 "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+"Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-"Build Number".PadRight($pad) + " : " + $OS.BuildNumber | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+"Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+"Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
 "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-"Domain".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+"DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+"NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+$roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
+"Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+
+$drives = @()
+$drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
+$Vol = ExecQuery -NameSpace "root\cimv2" -Query "select * from Win32_LogicalDisk"
+foreach ($disk in $vol) {
+  $drv = New-Object PSCustomObject
+  $drv | Add-Member -type NoteProperty -name Letter -value $disk.DeviceID 
+  $drv | Add-Member -type NoteProperty -name DriveType -value $drvtype[$disk.DriveType]
+  $drv | Add-Member -type NoteProperty -name VolumeName -value $disk.VolumeName 
+  $drv | Add-Member -type NoteProperty -Name TotalMB -Value ($disk.size)
+  $drv | Add-Member -type NoteProperty -Name FreeMB -value ($disk.FreeSpace)
+  $drives += $drv
+}
+$drives | 
+Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
+Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+
+ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($resDir + "\products.txt")
