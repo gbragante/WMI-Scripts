@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20200918)"
+$version = "WMI-Collect (20210128)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -280,7 +280,7 @@ Function FileVersion {
     $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
 
     if ($log) {
-      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
+      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss") + $fileobj.VersionInfo.CompanyName + "," + $fileobj.VersionInfo.CompanyName + "," + $fileobj.VersionInfo.FileDescription) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
     }
     return $filever | Out-Null
   } else {
