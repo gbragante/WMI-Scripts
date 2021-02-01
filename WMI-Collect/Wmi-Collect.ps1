@@ -1,6 +1,6 @@
 param( [string]$Path )
 
-$version = "WMI-Collect (20210128)"
+$version = "WMI-Collect (20210201)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function Write-Log {
@@ -36,6 +36,7 @@ Function Win10Ver {
   param(
     [string] $Build
   )
+
   if ($build -eq 14393) {
     return " (RS1 / 1607)"
   } elseif ($build -eq 15063) {
@@ -52,6 +53,8 @@ Function Win10Ver {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
     return " (20H1 / 2004)"  
+  } elseif ($build -eq 19042) {
+    return " (20H2 / 2010)"  
   }
 }
 
@@ -280,7 +283,11 @@ Function FileVersion {
     $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
 
     if ($log) {
-      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss") + $fileobj.VersionInfo.CompanyName + "," + $fileobj.VersionInfo.CompanyName + "," + $fileobj.VersionInfo.FileDescription) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
+      $LogFile = $resDir + "\FilesVersion.csv"
+      if (-not (Test-Path -Path $LogFile)) {
+        "File,Version,Date,Manufacturer,Description" | Out-File -FilePath ($LogFile)
+      }
+      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss") + "," + $fileobj.VersionInfo.CompanyName + "," + $fileobj.VersionInfo.FileDescription) | Out-File -FilePath ($LogFile) -Append
     }
     return $filever | Out-Null
   } else {
