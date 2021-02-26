@@ -3,85 +3,6 @@ param( [string]$Path, [switch]$NoPrompt )
 $version = "WMI-Collect (20210208)"
 # by Gianni Bragante - gbrag@microsoft.com
 
-Function Write-Log {
-  param( [string] $msg )
-  $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
-  Write-Host $msg
-  $msg | Out-File -FilePath $outfile -Append
-}
-
-Function ExecQuery {
-  param(
-    [string] $NameSpace,
-    [string] $Query
-  )
-  Write-Log ("Executing query " + $Query)
-  if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-    $ret = Get-CimInstance -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  } else {
-    $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  }
-  Write-Log (($ret | measure).count.ToString() + " results")
-  return $ret
-}
-
-Function ArchiveLog {
-  param( [string] $LogName )
-  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
-  Write-Log $cmd
-  Invoke-Expression $cmd
-}
-
-Function Win10Ver {
-  param(
-    [string] $Build
-  )
-
-  if ($build -eq 14393) {
-    return " (RS1 / 1607)"
-  } elseif ($build -eq 15063) {
-    return " (RS2 / 1703)"
-  } elseif ($build -eq 16299) {
-    return " (RS3 / 1709)"
-  } elseif ($build -eq 17134) {
-    return " (RS4 / 1803)"
-  } elseif ($build -eq 17763) {
-    return " (RS5 / 1809)"
-  } elseif ($build -eq 18362) {
-    return " (19H1 / 1903)"
-  } elseif ($build -eq 18363) {
-    return " (19H2 / 1909)"    
-  } elseif ($build -eq 19041) {
-    return " (20H1 / 2004)"  
-  } elseif ($build -eq 19042) {
-    return " (20H2 / 2010)"  
-  }
-}
-
-Add-Type -MemberDefinition @"
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern uint NetApiBufferFree(IntPtr Buffer);
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern int NetGetJoinInformation(
-  string server,
-  out IntPtr NameBuffer,
-  out int BufferType);
-"@ -Namespace Win32Api -Name NetApi32
-
-
-function GetNBDomainName {
-  $pNameBuffer = [IntPtr]::Zero
-  $joinStatus = 0
-  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
-    $null,               # lpServer
-    [Ref] $pNameBuffer,  # lpNameBuffer
-    [Ref] $joinStatus    # BufferType
-  )
-  if ( $apiResult -eq 0 ) {
-    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
-    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
-  }
-}
 
 $UserDumpCode=@'
 using System;
@@ -165,7 +86,7 @@ Function CreateProcDump {
 
   $proc = Get-Process -ID $ProcID
   if (-not $proc) {
-    Write-Log ("The process with PID $ProcID is not running")
+    Write-Log -outfile $outfile -msg "The process with PID $ProcID is not running"
     return $false
   }
   if (-not $Filename) { $filename = $proc.Name }
@@ -173,28 +94,28 @@ Function CreateProcDump {
   
   if (Test-Path ($root + "\" + $procdump)) {
     $cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $outfile + """ 2>>""" + $errfile + """"
-    Write-Log $cmd
+    Write-Log -outfile $outfile -msg $cmd
     Invoke-Expression $cmd
 
     if (Test-Path $DumpFile) {
       if ((Get-Item $DumpFile).length -gt 1000) {
         $DumpCreated = $true
-        Write-Log "Successfully created $DumpFile with ProcDump"
+        Write-Log -outfile $outfile -msg "Successfully created $DumpFile with ProcDump"
       } else {
-        Write-Log "The created dump file is too small, removing it"
+        Write-Log -outfile $outfile -msg "The created dump file is too small, removing it"
         Remove-Item $DumpFile
       }
     } else {
-      Write-Log "Cannot find the dump file"
+      Write-Log -outfile $outfile -msg "Cannot find the dump file"
     }
   }
 
   if (-not $DumpCreated) {
-    Write-Log "Cannot create the dump with ProcDump, trying the backup method"
+    Write-Log -outfile $outfile -msg "Cannot create the dump with ProcDump, trying the backup method"
     if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
-      Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
+      Write-Log -outfile $outfile -msg ("The dump for the Process ID $ProcID was generated as $DumpFile")
     } else {
-      Write-Log "Failed to create the dump for the Process ID $ProcID"
+      Write-Log -outfile $outfile -msg "Failed to create the dump for the Process ID $ProcID"
     }
   }
 }
@@ -345,9 +266,11 @@ New-Item -itemtype directory -path $subDir | Out-Null
 $outfile = $resDir + "\script-output.txt"
 $errfile = $resDir + "\script-errors.txt"
 
-Write-Log $version
+Import-Module ($root + "\Collect-Commons.psm1")
+
+Write-Log -outfile $outfile -msg $version
 if ($NoPrompt) {
-  Write-Log "NoPrompt switch specified"
+  Write-Log -outfile $outfile -msg "NoPrompt switch specified"
 }
 
 if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
@@ -356,20 +279,20 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
   $procdump = "procdump.exe"
 }
 
-Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
+Write-Log -outfile $outfile -msg "Collecting dump of the svchost process hosting the WinMgmt service"
 $pidsvc = FindServicePid "winmgmt"
 if ($pidsvc) {
-  Write-Log "Found the PID using FindServicePid"
+  Write-Log -outfile $outfile -msg "Found the PID using FindServicePid"
   CreateProcDump $pidsvc $resDir "scvhost-WinMgmt"
 } else {
-  Write-Log "Cannot find the PID using FindServicePid, looping through processes"
+  Write-Log -outfile $outfile -msg "Cannot find the PID using FindServicePid, looping through processes"
   $list = Get-Process
   $found = $false
   if (($list | measure).count -gt 0) {
     foreach ($proc in $list) {
       $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
       if (($prov | measure).count -gt 0) {
-        Write-Log "Found the PID having wmisvc.dll loaded"
+        Write-Log -outfile $outfile -msg "Found the PID having wmisvc.dll loaded"
         CreateProcDump $proc.id $resDir "scvhost-WinMgmt"
         $found = $true
         break
@@ -377,30 +300,30 @@ if ($pidsvc) {
     }
   }
   if (-not $found) {
-    Write-Log "Cannot find any process having wmisvc.dll loaded, probably the WMI service is not running"
+    Write-Log -outfile $outfile -msg "Cannot find any process having wmisvc.dll loaded, probably the WMI service is not running"
   }
 }
 
-Write-Log "Collecing the dumps of WMIPrvSE.exe processes"
+Write-Log -outfile $outfile -msg "Collecing the dumps of WMIPrvSE.exe processes"
 $list = get-process -Name "WmiPrvSe" -ErrorAction SilentlyContinue 2>>$errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
-    Write-Log ("Found WMIPrvSE.exe with PID " + $proc.Id)
+    Write-Log -outfile $outfile -msg ("Found WMIPrvSE.exe with PID " + $proc.Id)
     CreateProcDump $proc.id $resDir
   }
 } else {
-  Write-Log "No WMIPrvSE.exe processes found"
+  Write-Log -outfile $outfile -msg "No WMIPrvSE.exe processes found"
 }
 
-Write-Log "Collecing the dumps of decoupled WMI providers"
+Write-Log -outfile $outfile -msg "Collecing the dumps of decoupled WMI providers"
 $list = Get-Process
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
     $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
     if (($prov | measure).count -gt 0) {
-      Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
+      Write-Log -outfile $outfile -msg ("Found " + $proc.Name + "(" + $proc.id + ")")
       CreateProcDump $proc.id $resDir
     }
   }
@@ -408,11 +331,11 @@ if (($list | measure).count -gt 0) {
 
 $proc = get-process "WmiApSrv" -ErrorAction SilentlyContinue
 if ($proc) {
-  Write-Log "Collecting dump of the WmiApSrv.exe process"
+  Write-Log -outfile $outfile -msg "Collecting dump of the WmiApSrv.exe process"
   CreateProcDump $proc.id $resDir
 }
 
-Write-Log "Collecing the dumps of scrcons.exe processes"
+Write-Log -outfile $outfile -msg "Collecing the dumps of scrcons.exe processes"
 $list = get-process -Name "scrcons" -ErrorAction SilentlyContinue 2>>$errfile
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
@@ -420,106 +343,106 @@ if (($list | measure).count -gt 0) {
     CreateProcDump $proc.id $resDir
   }
 } else {
-  Write-Log "No scrcons.exe processes found"
+  Write-Log -outfile $outfile -msg "No scrcons.exe processes found"
 }
 
-Write-Log "Collecting Autorecover MOFs content"
+Write-Log -outfile $outfile -msg "Collecting Autorecover MOFs content"
 $mof = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM")).'Autorecover MOFs'
 if ($mof.length -eq 0) {
-  Write-Log ("The registry key ""HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM\Autorecover MOFs"" is missing or empty")
+  Write-Log -outfile $outfile -msg ("The registry key ""HKLM:\SOFTWARE\Microsoft\Wbem\CIMOM\Autorecover MOFs"" is missing or empty")
   exit
 }
 $mof | Out-File ($resDir + "\Autorecover MOFs.txt")
 
-Write-Log "Listing WBEM folder"
+Write-Log -outfile $outfile -msg "Listing WBEM folder"
 Get-ChildItem $env:windir\system32\wbem -Recurse | Out-File $resDir\wbem.txt
 
-Write-Log "Exporting WMIPrvSE AppIDs and CLSIDs registration keys"
+Write-Log -outfile $outfile -msg "Exporting WMIPrvSE AppIDs and CLSIDs registration keys"
 $cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """ + $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 $cmd = "reg query ""HKEY_CLASSES_ROOT\AppID\{1F87137D-0E7C-44d5-8C73-4EFFB68962F2}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 $cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{73E709EA-5D93-4B2E-BBB0-99B7938DA9E4}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 $cmd = "reg query ""HKEY_CLASSES_ROOT\Wow6432Node\AppID\{1F87137D-0E7C-44d5-8C73-4EFFB68962F2}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 $cmd = "reg query ""HKEY_CLASSES_ROOT\CLSID\{4DE225BF-CF59-4CFC-85F7-68B90F185355}"" >> """+ $resDir + "\WMIPrvSE.reg.txt"" 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
+Write-Log -outfile $outfile -msg "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Ole """+ $resDir + "\Ole.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
 Invoke-Expression $cmd
 
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Rpc"
+Write-Log -outfile $outfile -msg "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Rpc"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Rpc """+ $resDir + "\Rpc.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
 Invoke-Expression $cmd
 
 if (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Rpc") {
-  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Rpc"
+  Write-Log -outfile $outfile -msg "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Rpc"
   $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Rpc"" """ + $resDir + "\Rpc-policies.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
   Invoke-Expression $cmd
 }
 
-Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
+Write-Log -outfile $outfile -msg "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
 Invoke-Expression $cmd
 
-Write-Log "Exporting Application log"
+Write-Log -outfile $outfile -msg "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 ArchiveLog "Application"
 
-Write-Log "Exporting System log"
+Write-Log -outfile $outfile -msg "Exporting System log"
 $cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 ArchiveLog "System"
 
-Write-Log "Exporting WMI-Activity/Operational log"
+Write-Log -outfile $outfile -msg "Exporting WMI-Activity/Operational log"
 $cmd = "wevtutil epl Microsoft-Windows-WMI-Activity/Operational """+ $resDir + "\" + $env:computername + "-WMI-Activity.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression $cmd
 ArchiveLog "WMI-Activity"
 
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $actLog = Get-WinEvent -logname Microsoft-Windows-WMI-Activity/Operational -Oldest -ErrorAction Continue 2>>$errfile
   if (($actLog  | measure).count -gt 0) {
-    Write-Log "Exporting WMI-Activity log"
+    Write-Log -outfile $outfile -msg "Exporting WMI-Activity log"
     $actLog | Out-String -width 1000 | Out-File -FilePath ($resDir + "\WMI-Activity.txt")
   }
 }
 
-Write-Log "Exporting netstat output"
+Write-Log -outfile $outfile -msg "Exporting netstat output"
 $cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
-Write-Log "Exporting ipconfig /all output"
+Write-Log -outfile $outfile -msg "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
-Write-Log "Exporting service configuration"
+Write-Log -outfile $outfile -msg "Exporting service configuration"
 $cmd = "sc.exe queryex winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 $cmd = "sc.exe qc winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 $cmd = "sc.exe enumdepend winmgmt 3000 >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 $cmd = "sc.exe sdshow winmgmt >>""" + $resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 FileVersion -Filepath ($env:windir + "\system32\wbem\wbemcore.dll") -Log $true
@@ -528,7 +451,7 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPrvSE.exe") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $true
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiApRpl.dll") -Log $true
 
-Write-Log "Collecting details about running processes"
+Write-Log -outfile $outfile -msg "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
@@ -546,7 +469,7 @@ if ($proc.count -gt 3) {
   @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, @{N="State";E={($_.ExecutionState)}}, $StartTime, $Owner, CommandLine |
   Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
 
-  Write-Log "Retrieving file version of running binaries"
+  Write-Log -outfile $outfile -msg "Retrieving file version of running binaries"
   $binlist = $proc | Group-Object -Property ExecutablePath
   foreach ($file in $binlist) {
     if ($file.Name) {
@@ -554,7 +477,7 @@ if ($proc.count -gt 3) {
     }
   }
 
-  Write-Log "Collecting services details"
+  Write-Log -outfile $outfile -msg "Collecting services details"
   $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
 
   if ($svc) {
@@ -562,7 +485,7 @@ if ($proc.count -gt 3) {
     Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
   }
 
-  Write-Log "Collecting system information"
+  Write-Log -outfile $outfile -msg "Collecting system information"
   $pad = 27
   $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
   $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
@@ -626,11 +549,11 @@ if ($proc.count -gt 3) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
-  Write-Log "Exiting since WMI is not working"
+  Write-Log -outfile $outfile -msg "Exiting since WMI is not working"
   exit
 }
 
-Write-Log "COM Security"
+Write-Log -outfile $outfile -msg "COM Security"
 $Reg = [WMIClass]"\\.\root\default:StdRegProv"
 $DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
 $DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
@@ -644,10 +567,10 @@ $converter = new-object system.management.ManagementClass Win32_SecurityDescript
 "Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 "Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($resDir + "\COMSecurity.txt") -Append
 
-Write-Log "Collecting the list of installed hotfixes"
+Write-Log -outfile $outfile -msg "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
 
-Write-Log "Collecting details of provider hosts"
+Write-Log -outfile $outfile -msg "Collecting details of provider hosts"
 New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
 
 "Coupled providers (WMIPrvSE.exe processes)" | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
@@ -681,7 +604,7 @@ if ($prov) {
       "PID" + " " + $prv.ProcessId + " (" + [String]::Format("{0:x}", $prv.ProcessId) + ") Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " KernelTime:" + $kh + " UserTime:" + $uh + " Uptime:" + $uptime | Out-File -FilePath ($resDir + "\ProviderHosts.txt") -Append
       $totMem = $totMem + $prv.PrivatePageCount
     } else {
-      Write-Log ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
+      Write-Log -outfile $outfile -msg ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
     }
 
     foreach ($provname in $provhost) {
@@ -755,7 +678,7 @@ foreach ($proc in $list) {
   }
 }
 
-Write-Log "Collecting quota details"
+Write-Log -outfile $outfile -msg "Collecting quota details"
 $quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
 if ($quota) {
   ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
@@ -771,7 +694,7 @@ ExecQuery -Namespace "root\subscription" -Query "select * from __IntervalTimerIn
 ExecQuery -Namespace "root\subscription" -Query "select * from __AbsoluteTimerInstruction" | Export-Clixml -Path ($subDir + "\__AbsoluteTimerInstruction.xml")
 ExecQuery -Namespace "root\subscription" -Query "select * from __FilterToConsumerBinding" | Export-Clixml -Path ($subDir + "\__FilterToConsumerBinding.xml")
 
-Write-Log "Exporting driverquery /v output"
+Write-Log -outfile $outfile -msg "Exporting driverquery /v output"
 $cmd = "driverquery /v >""" + $resDir + "\drivers.txt""" + $RdrErr
-Write-Log $cmd
+Write-Log -outfile $outfile -msg $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
