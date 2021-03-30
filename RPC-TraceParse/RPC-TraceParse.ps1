@@ -1,4 +1,4 @@
-# RPC-TraceParse - 20210329
+# RPC-TraceParse - 20210330
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -83,7 +83,7 @@ if ($KFileName) {
 
 $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter"; 
              "{4f32adc8-6052-4a04-8701-293ccf2096f0}" = "sspirpc";
-             "{8a7b5006-cc13-11db-9705-005056c00008}" = "??";
+             "{8a7b5006-cc13-11db-9705-005056c00008}" = "--";
              "{00000136-0000-0000-c000-000000000046}" = "ISCMLocalActivator";
              "{00000132-0000-0000-c000-000000000046}" = "ILocalSystemActivator";
              "{00000001-0000-0000-c000-000000000046}" = "IClassFactory";
@@ -99,21 +99,40 @@ $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter";
              "{f309ad18-d86a-11d0-a075-00c04fb68820}" = "IWbemLevel1Login";
              "{9556dc99-828c-11cf-a37e-00aa003240c7}" = "IWbemServices";
              "{e1af8308-5d1f-11c9-91a4-08002b14a0fa}" = "epmp";
-             "{c605f9fb-f0a3-4e2a-a073-73560f8d9e3e}" = "??";
+             "{c605f9fb-f0a3-4e2a-a073-73560f8d9e3e}" = "--";
              "{7c857801-7381-11cf-884d-00aa004b2e24}" = "PSFactoryBuffer"
              "{6b3fc272-bf37-4968-933a-6df9222a2607}" = "_IWmiProviderConfiguration"
              "{1c1c45ee-4395-11d2-b60b-00104b703efd}" = "IWbemFetchSmartEnum"
              "{423ec01e-2e35-11d2-b604-00104b703efd}" = "IWbemWCOSmartEnum"
              "{11220835-5b26-4d94-ae86-c3e475a809de}" = "ICryptProtect"
-             "{4bec6bb8-b5c2-4b6f-b2c1-5da5cf92d0d9}" = "??"
-             "{085b0334-e454-4d91-9b8c-4134f9e793f3}" = "??"
-             "{9d420415-b8fb-4f4a-8c53-4502ead30ca9}" = "??"
+             "{4bec6bb8-b5c2-4b6f-b2c1-5da5cf92d0d9}" = "--"
+             "{085b0334-e454-4d91-9b8c-4134f9e793f3}" = "--"
+             "{9d420415-b8fb-4f4a-8c53-4502ead30ca9}" = "--"
              "{c6f3ee72-ce7e-11d1-b71e-00c04fc3111a}" = "IMachineActivatorControl"
-             "{f6beaff7-1e19-4fbb-9f8f-b89e2018337c}" = "??"
-             "{15cd3850-28ca-11ce-a4e8-00aa006116cb}" = "??"
+             "{f6beaff7-1e19-4fbb-9f8f-b89e2018337c}" = "--"
+             "{15cd3850-28ca-11ce-a4e8-00aa006116cb}" = "--"
              "{c503f532-443a-4c69-8300-ccd1fbdb3839}" = "XPVPROPS.DLL"
              "{99fcfec4-5260-101b-bbcb-00aa0021347a}" = "IObjectExporter"
              "{12345678-1234-abcd-ef00-01234567cffb}" = "logon"
+             "{12345778-1234-abcd-ef00-0123456789ab}" = "lsarpc"
+             "{00000143-0000-0000-c000-000000000046}" = "IRemUnknown2"
+             "{49cf325d-12be-47eb-91c8-d74ab3479f92}" = "--"
+             "{84cb7bf8-4684-4980-84cf-2c99fd3ceffa}" = "--"
+             "{6bffd098-a112-3610-9833-46c3f87e345a}" = "--"
+             "{4b324fc8-1670-01d3-1278-5a47bf6ee188}" = "--"
+             "{88143fd0-c28d-4b2b-8fef-8d882f6a9390}" = "--"
+             "{1a8a5d71-d95b-4dcd-915e-f9f6d31879ad}" = "ITerminal"
+             "{bde95fdf-eee0-45de-9e12-e5a61cd0d4fe}" = "--"
+             "{484809d6-4239-471b-b5bc-61df8c23ac48}" = "--"
+             "{45776b01-5956-4485-9f80-f428f7d60129}" = "--"
+             "{3c4728c5-f0ab-448b-bda1-6ce01eb0a6d6}" = "DHCPV6C"
+             "{0d72a7d4-6148-11d1-b4aa-00c04fb66ea0}" = "ICertProtectFunctions"
+             "{a2c45f7c-7d32-46ad-96f5-adafb486be74}" = "--"
+             "{cad784cb-4c1b-4d96-b8f7-4716b568b13c}" = "--"
+             "{dd490425-5325-4565-b774-7e27d6c09c24}" = "BFE"
+             "{17a643ed-26bc-4afa-b545-1bbbe77dbc30}" = "ITabWindow2"
+             "{feefb420-9399-492d-969c-51af6dc38fb1}" = "ITabWindowManager"
+             "{7f3c143a-6083-48f4-a997-56040a4c1d51}" = "IBrowserFrame"
             }
 
 $tbEvt = New-Object system.Data.DataTable
@@ -155,9 +174,6 @@ while (-not $sr.EndOfStream) {
   $part = ""
   $part = $line
 
-  $npos = $part.IndexOf("::")
-  $time = ($part.Substring($nPos + 2 , 25))
-  
   if ($part -match  "\[Debug \]" -or $part -match  "\[Debug17 \]") { 
     $LP = LineParam
     if ($part -match  "RPC call started") {
@@ -168,7 +184,7 @@ while (-not $sr.EndOfStream) {
         $side = "Server"
       }
       $row = $tbEvt.NewRow()
-      $row.Time = $time
+      $row.Time = $LP.Time
       $row.Side = $side
       $row.PID = $LP.PID
       $row.TID = $LP.TID
@@ -223,7 +239,7 @@ if ($Kernel) {
         $row.SessionId = FindSep -FindIn $line -Left "SessionId=" -Right ","
         $row.User = (FindSep -FindIn $line -Left "UserSID=" -Right ",").Replace("\\","")
         $row.FileName= (FindSep -FindIn $line -Left "FileName=" -Right ",")
-        $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\??\","")
+        $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\--\","")
         $tbProc.Rows.Add($row)
         Write-host $line
       }
