@@ -2,8 +2,19 @@
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName = "C:\files\RPC-TraceParse\wmi-trace-gbrag-t470s-!FMT.txt"
+  [string]$FileName
 )
+
+Function LineParam {
+  $npos=$line.IndexOf("::")
+  $time = ($line.Substring($nPos + 2 , 25))
+  $thread = $line.Substring(0,20).Replace(" ","")
+  $npos = $thread.indexof("]")
+  $thread = $thread.Substring($npos + 1, $thread.IndexOf("::") - $npos -1)
+  $LinePid = [int32]("0x" + $thread.Substring(0,$thread.IndexOf(".")))
+  $LineTid = [int32]("0x" + $thread.Substring($thread.IndexOf(".")+1))
+  return @{ Time = $time; Thread = $thread; PID = $LinePid; TID = $LineTid }
+}
 
 Function DecodeIFUUID {
   # HKEY_CLASSES_ROOT\Interface\ is too slow
@@ -286,6 +297,64 @@ $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter";
              "{17a643ed-26bc-4afa-b545-1bbbe77dbc30}" = "ITabWindow2"
              "{feefb420-9399-492d-969c-51af6dc38fb1}" = "ITabWindowManager"
              "{7f3c143a-6083-48f4-a997-56040a4c1d51}" = "IBrowserFrame"
+             "{d0074ffd-570f-4a9b-8d69-199fdba5723b}" = "INetworkListManager"
+             "{11f25515-c879-400a-989e-b074d5f092fe}" = "--"
+             "{182c40fa-32e4-11d0-818b-00a0c9231c29}" = "ICatalogSession"
+             "{1d118904-94b3-4a64-9fa6-ed432666a7b9}" = "ICatalog64BitSupport"
+             "{a8927a41-d3ce-11d1-8472-006008b0e5ca}" = "ICatalogTableInfo"
+             "{0e3d6630-b46b-11d1-9d2d-006008b0e5ca}" = "ICatalogTableRead1"
+             "{5a648006-843a-4da9-865b-9d26e5dfad7b}" = "IAsyncAction"
+             "{2fb92682-6599-42dc-ae13-bd2ca89bd11c}" = "--"
+             "{f50aac00-c7f3-428e-a022-a6b71bfb9d43}" = "--"
+             "{3c4728c5-f0ab-448b-bda1-6ce01eb0a6d5}" = "DHCPC"
+             "{6c323e3f-585f-4432-8a2e-0719fb35e48b}" = "--"
+             "{6040ec14-6557-41f9-a3f7-b1cab7b42120}" = "IRuntimeBroker"
+             "{8ca8efcc-f4ac-4987-984b-0b92f11c1cd3}" = "__x_Windows_CCortana_CISearchFoldersStatics"
+             "{0166231b-fd21-4e33-a713-75eb3207a138}" = "IBackgroundWorkItemInstanceRemote"
+             "{e53d94ca-7464-4839-b044-09a2fb8b3ae5}" = "--"
+             "{7656cfa4-b63a-4542-a8de-ef402bac895d}" = "IUserApplicationStateChangeHandler"
+             "{fc99c60d-d59b-4b2b-b73d-3a1cc9f2aafa}" = "ILifetimeManagerRemote"
+             "{b755e6e0-b048-49cc-8911-11a041216f5f}" = "IApplicationStateChangeHandler"
+             "{8782d3b9-ebbd-4644-a3d8-e8725381919b}" = "psmApp"
+             "{3473dd4d-2e88-4006-9cba-22570909dd10}" = "7-zipn.dll"
+             "{9cfeead6-6135-4fcf-831a-fd3b236023f8}" = "--"
+             "{6c9b7b96-45a8-4cca-9eb3-e21ccf8b5a89}" = "umpoapi"
+             "{8b71bd79-ccbb-47ab-ba09-97ca52c81da9}" = "--"
+             "{5f935276-1c7b-46f5-ac77-077759001d2b}" = "--"
+             "{02833a34-18e7-4a6d-87ae-a0e707eae0e0}" = "IApplicationTracker"
+             "{53825514-1183-4934-a0f4-cfdc51c3389b}" = "TermSrvSessionAppContainer"
+             "{959c5a99-177c-478e-8c3b-77e07e9bf3aa}" = "ISessionList"
+             "{a1b7de7a-4e77-43db-ae78-96fc182fed4a}" = "ITSSession"
+             "{4d10b48b-c531-4731-9bde-b03c28e9c61c}" = "IUserName"
+             "{3b338d89-6cfa-44b8-847e-531531bc9992}" = "--"
+             "{dd59071b-3215-4c59-8481-972edadc0f6a}" = "--"
+             "{886d8eeb-8cf2-4446-8d02-cdba1dbdcf99}" = "IPropertyStore"
+             "{7c9d26b6-c493-49b3-b66a-80bef106286b}" = "IObjectWithPropertyStore"
+             "{4207a996-ca2f-42f7-bde8-8b10457a7f30}" = "__x_Windows_CStorage_CIStorageItem"
+             "{ab310581-ac80-11d1-8df3-00c04fb6ef55}" = "ISearchCrawlScopeManager"
+             "{90c5260f-df18-4049-bf47-35d736af4a3e}" = "--"
+             "{1b37ca91-76b1-4f5e-a3c7-2abfc61f2bb0}" = "BrokerInfrastructureRuntimeInterface"
+             "{a2add09a-fb9b-4e6e-bc69-0b810eeb0ab4}" = "IBackgroundActivationContext"
+             "{b18fbab6-56f8-4702-84e0-41053293a869}" = "--"
+             "{000001a0-0000-0000-c000-000000000046}" = "ISystemActivator"
+             "{82273fdc-e32a-18c3-3f78-827929dc23ea}" = "eventlog"
+             "{412f241e-c12a-11ce-abff-0020af6e7a17}" = "ISCM"
+             "{1ac7516e-e6bb-4a69-b63f-e841904dc5a6}" = "IEUserBroker"
+             "{37a10a44-6f8d-47e9-8376-9cdc326326f4}" = "IShdocvwBroker"
+             "{85cb6900-4d95-11cf-960c-0080c7f4ee85}" = "IShellWindows"
+             "{b7b31df9-d515-11d3-a11c-00105a1f515a}" = "IWbemShutdown"
+             "{52c550c6-067f-4bc8-98b2-0f0e91c10261}" = "IIS W3 Control Interface ProxyStub"
+             "{07435309-d440-41b7-83f3-eb82db6c622f}" = "IWmiProviderHost"
+             "{06413d98-405c-4a5a-8d6f-19b8b7c6acf7}" = "IWmiProviderFactoryInitialize"
+             "{21cd80a2-b305-4f37-9d4c-4534a8d9b568}" = "IWmiProviderFactory"
+             "{027947e1-d731-11ce-a357-000000000001}" = "IEnumWbemClassObject"
+             "{fec1b0ac-5808-4033-a915-c0185934581e}" = "IWmiProviderSite"
+             "{497d95a6-2d27-4bf5-9bbd-a6046957133c}" = "--"
+             "{a4b8d482-80ce-40d6-934d-b22a01a44fe7}" = "--"
+             "{266f33b4-c7c1-4bd1-8f52-ddb8f2214ea9}" = "--"
+             "{ab310581-ac80-11d1-8df3-00c04fb6ef69}" = "ISearchManager"
+             "{04c18ccf-1f57-4cbd-88cc-3900f5195ce3}" = "ISearchRoot"
+             "{d09bdeb5-6171-4a34-bfe2-06fa82652568}" = "--"
             }
 
 $tbEvt = New-Object system.Data.DataTable
@@ -346,6 +415,7 @@ $col = New-Object system.Data.DataColumn PID,([int32]); $tbProc.Columns.Add($col
 $col = New-Object system.Data.DataColumn Parent,([int32]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Start,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Stop,([string]); $tbProc.Columns.Add($col)
+$col = New-Object system.Data.DataColumn ExitStatus,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn SessionID,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn User,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbProc.Columns.Add($col)
@@ -504,6 +574,9 @@ if ($Kernel) {
         $aProc = $tbProc.Select("PID = " + $ProcID)
         if ($aProc.Count -gt 0) {
           $aProc[$aProc.Count-1].Stop = $time
+          if ($line -match "Process - End") {
+            $aProc[$aProc.Count-1].ExitStatus = (FindSep -FindIn $line -Left "ExitStatus=" -Right ",")
+          }
         }
       }
     }
