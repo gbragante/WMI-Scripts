@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20210330
+# WMIRPC-TraceParse - 20210401
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -355,6 +355,12 @@ $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter";
              "{ab310581-ac80-11d1-8df3-00c04fb6ef69}" = "ISearchManager"
              "{04c18ccf-1f57-4cbd-88cc-3900f5195ce3}" = "ISearchRoot"
              "{d09bdeb5-6171-4a34-bfe2-06fa82652568}" = "--"
+             "{0b0a6584-9e0f-11cf-a3cf-00805f68cb1b}" = "localepmp"
+             "{3919286a-b10c-11d0-9ba8-00c04fd92ef5}" = "--"
+             "{7f9d11bf-7fb9-436b-a812-b2d50c5d4c03}" = "--"
+             "{12345778-1234-abcd-ef00-0123456789ac}" = "--"
+             "{30adc50c-5cbc-46ce-9a0e-91914789e23c}" = "--"
+             "{86d35949-83c9-4044-b424-db363231fd0c}" = "--"
             }
 
 $tbEvt = New-Object system.Data.DataTable

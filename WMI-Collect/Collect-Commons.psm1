@@ -48,9 +48,9 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1 / 2004)"  
+    return " (20H1 / Vb)"  
   } elseif ($build -eq 19042) {
-    return " (20H2 / 2010)"  
+    return " (20H2 / Vb)"
   }
 }
 
