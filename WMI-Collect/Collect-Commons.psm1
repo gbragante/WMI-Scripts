@@ -48,9 +48,11 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1 / Vb)"  
+    return " (20H1)"  
   } elseif ($build -eq 19042) {
-    return " (20H2 / Vb)"
+    return " (20H2)"  
+  } elseif ($build -eq 19043) {
+    return " (21H1)"  
   }
 }
 
@@ -287,6 +289,32 @@ Function FileVersion {
   } else {
     return ""
   }
+}
+
+Function FindSep {
+  param( [string]$FindIn, [string]$Left,[string]$Right )
+
+  if ($left -eq "") {
+    $Start = 0
+  } else {
+    $Start = $FindIn.IndexOf($Left) 
+    if ($Start -gt 0 ) {
+      $Start = $Start + $Left.Length
+    } else {
+       return ""
+    }
+  }
+
+  if ($Right -eq "") {
+    $End = $FindIn.Substring($Start).Length
+  } else {
+    $End = $FindIn.Substring($Start).IndexOf($Right)
+    if ($end -le 0) {
+      return ""
+    }
+  }
+  $Found = $FindIn.Substring($Start, $End)
+  return $Found
 }
 
 Export-ModuleMember -Function *

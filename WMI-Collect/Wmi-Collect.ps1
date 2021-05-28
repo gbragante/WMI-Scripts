@@ -1,6 +1,6 @@
 param( [string]$Path, [switch]$NoPrompt )
 
-$version = "WMI-Collect (20210208)"
+$version = "WMI-Collect (20210528)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
