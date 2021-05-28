@@ -1,99 +1,7 @@
 param( [string]$Path )
 
-$version = "Sched-Collect (20191023)"
+$version = "Sched-Collect (20210528)"
 # by Gianni Bragante - gbrag@microsoft.com
-
-Function Write-Log {
-  param( [string] $msg )
-  $msg = (get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " " + $msg
-  Write-Host $msg
-  $msg | Out-File -FilePath $outfile -Append
-}
-
-Function ExecQuery {
-  param(
-    [string] $NameSpace,
-    [string] $Query
-  )
-  Write-Log ("Executing query " + $Query)
-  if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-    $ret = Get-CimInstance -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  } else {
-    $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
-  }
-  Write-Log (($ret | measure).count.ToString() + " results")
-  return $ret
-}
-
-Function ArchiveLog {
-  param( [string] $LogName )
-  $cmd = "wevtutil al """+ $resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $outfile + """ 2>>""" + $errfile + """"
-  Write-Log $cmd
-  Invoke-Expression $cmd
-}
-
-Function Win10Ver {
-  param(
-    [string] $Build
-  )
-  if ($build -eq 14393) {
-    return " (RS1 / 1607)"
-  } elseif ($build -eq 15063) {
-    return " (RS2 / 1703)"
-  } elseif ($build -eq 16299) {
-    return " (RS3 / 1709)"
-  } elseif ($build -eq 17134) {
-    return " (RS4 / 1803)"
-  } elseif ($build -eq 17763) {
-    return " (RS5 / 1809)"
-  } elseif ($build -eq 18362) {
-    return " (19H1 / 1903)"
-  } elseif ($build -eq 18363) {
-    return " (19H2 / 1909)" 
-  }
-}
-
-Add-Type -MemberDefinition @"
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern uint NetApiBufferFree(IntPtr Buffer);
-[DllImport("netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-public static extern int NetGetJoinInformation(
-  string server,
-  out IntPtr NameBuffer,
-  out int BufferType);
-"@ -Namespace Win32Api -Name NetApi32
-
-function GetNBDomainName {
-  $pNameBuffer = [IntPtr]::Zero
-  $joinStatus = 0
-  $apiResult = [Win32Api.NetApi32]::NetGetJoinInformation(
-    $null,               # lpServer
-    [Ref] $pNameBuffer,  # lpNameBuffer
-    [Ref] $joinStatus    # BufferType
-  )
-  if ( $apiResult -eq 0 ) {
-    [Runtime.InteropServices.Marshal]::PtrToStringAuto($pNameBuffer)
-    [Void] [Win32Api.NetApi32]::NetApiBufferFree($pNameBuffer)
-  }
-}
-
-Function FileVersion {
-  param(
-    [string] $FilePath,
-    [bool] $Log = $false
-  )
-  if (Test-Path -Path $FilePath) {
-    $fileobj = Get-item $FilePath
-    $filever = $fileobj.VersionInfo.FileMajorPart.ToString() + "." + $fileobj.VersionInfo.FileMinorPart.ToString() + "." + $fileobj.VersionInfo.FileBuildPart.ToString() + "." + $fileobj.VersionInfo.FilePrivatepart.ToString()
-
-    if ($log) {
-      ($FilePath + "," + $filever + "," + $fileobj.CreationTime.ToString("yyyyMMdd HH:mm:ss")) | Out-File -FilePath ($resDir + "\FilesVersion.csv") -Append
-    }
-    return $filever | Out-Null
-  } else {
-    return ""
-  }
-}
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
@@ -112,101 +20,97 @@ $confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
 if ($confirm.ToLower() -ne "y") {exit}
 
 
-$Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+$global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 if ($Path) {
   if (-not (Test-Path $path)) {
     Write-Host "The folder $Path does not esist"
     exit
   }
-  $resDir = $Path
+  $global:resDir = $Path
 } else {
   $resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-  $resDir = $Root + "\" + $resName
-  New-Item -itemtype directory -path $resDir | Out-Null
+  $global:resDir = $global:Root + "\" + $resName
+  New-Item -itemtype directory -path $global:resDir | Out-Null
 }
 
-$outfile = $resDir + "\script-output.txt"
-$errfile = $resDir + "\script-errors.txt"
+$global:outfile = $global:resDir + "\script-output.txt"
+$global:errfile = $global:resDir + "\script-errors.txt"
 
-if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") {
-  $procdump = "procdump64.exe"
-} else {
-  $procdump = "procdump.exe"
-}
-if (-not (Test-Path ($root + "\" + $procdump))) {
-  $confirm = Read-Host ("The file " + $root + "\" + $procdump + " does not exist, the process dumps cannot be collected.`r`nDo you want to continue ? [Y / N]")
-  if ($confirm.ToLower() -ne "y") {exit}
-}
+Import-Module ($global:Root + "\Collect-Commons.psm1") -Force
 
 Write-Log $version
-Write-Log "Collecting dump of the svchost process hosting the Schedule service"
-$cmd = "&""" + $Root + "\" +$procdump + """ -accepteula -ma Schedule """ + $resDir + "\Svchost.exe-Schedule.dmp"" >>""" + $outfile + """ 2>>""" + $errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
+
+$pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32_service where Name='Schedule'").ProcessId
+if ($pidsvc) {
+  Write-Log "Collecting dump of the svchost process hosting the Schedule service"
+  CreateProcDump $pidsvc $global:resDir "scvhost-Schedule"
+} else {
+  Write-Log "Schedule service PID not found"
+}
 
 $tasks = Get-ScheduledTask
-$tasks | Out-File -FilePath ($resDir + "\Tasks.txt" )
+$tasks | Out-File -FilePath ($global:resDir + "\Tasks.txt" )
 
 Write-Log "Copying C:\Windows\Tasks"
-Copy-Item "C:\Windows\Tasks" -Recurse ($resDir + "\Windows-Tasks")
+Copy-Item "C:\Windows\Tasks" -Recurse ($global:resDir + "\Windows-Tasks")
 
 Write-Log "Copying C:\Windows\System32\Tasks"
-Copy-Item "C:\Windows\System32\Tasks" -Recurse ($resDir + "\System32-Tasks")
+Copy-Item "C:\Windows\System32\Tasks" -Recurse ($global:resDir + "\System32-Tasks")
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"
-$cmd = "reg export ""HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"" """+ $resDir + "\Schedule.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "reg export ""HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"" """+ $global:resDir + "\Schedule.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Invoke-Expression $cmd
 
 Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "Application"
 
 Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $resDir + "\" + $env:computername + "-System.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "System"
 
 Write-Log "Exporting TaskScheduler/Maintenance log"
-$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Maintenance """+ $resDir + "\" + $env:computername + "-TaskScheduler-Maintenance.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Maintenance """+ $global:resDir + "\" + $env:computername + "-TaskScheduler-Maintenance.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "TaskScheduler-Maintenance"
 
 Write-Log "Exporting TaskScheduler/Operational log"
-$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Operational """+ $resDir + "\" + $env:computername + "-TaskScheduler-Operational.evtx"" >>""" + $outfile + """ 2>>""" + $errfile + """"
+$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Operational """+ $global:resDir + "\" + $env:computername + "-TaskScheduler-Operational.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "TaskScheduler-Operational"
 
 Write-Log "Exporting netstat output"
-$cmd = "netstat -anob >""" + $resDir + "\netstat.txt""" + $RdrErr
+$cmd = "netstat -anob >""" + $global:resDir + "\netstat.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting ipconfig /all output"
-$cmd = "ipconfig /all >""" + $resDir + "\ipconfig.txt""" + $RdrErr
+$cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting service configuration"
-$cmd = "sc.exe queryex Schedule >>""" + $resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
+$cmd = "sc.exe queryex Schedule >>""" + $global:resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-$cmd = "sc.exe qc Schedule >>""" + $resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
+$cmd = "sc.exe qc Schedule >>""" + $global:resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-$cmd = "sc.exe enumdepend Schedule 3000 >>""" + $resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
+$cmd = "sc.exe enumdepend Schedule 3000 >>""" + $global:resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-$cmd = "sc.exe sdshow Schedule >>""" + $resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
+$cmd = "sc.exe sdshow Schedule >>""" + $global:resDir + "\ScheduleServiceConfig.txt""" + $RdrErr
 Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Collecting details about running processes"
 $proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
@@ -224,7 +128,7 @@ if ($proc) {
   @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
   @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
   @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, $Owner, CommandLine |
-  Out-String -Width 500 | Out-File -FilePath ($resDir + "\processes.txt")
+  Out-String -Width 500 | Out-File -FilePath ($global:resDir + "\processes.txt")
 
   Write-Log "Retrieving file version of running binaries"
   $binlist = $proc | Group-Object -Property ExecutablePath
@@ -239,7 +143,7 @@ if ($proc) {
 
   if ($svc) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
-    Out-String -Width 400 | Out-File -FilePath ($resDir + "\services.txt")
+    Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
 
   Write-Log "Collecting system information"
@@ -250,37 +154,37 @@ if ($proc) {
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
 
-  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$errfile
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolPaged = $ctr.CounterSamples[0].CookedValue 
-  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$errfile
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
 
-  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
-  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
-  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
   $drives = @()
   $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
@@ -296,15 +200,15 @@ if ($proc) {
   }
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
-  Out-File -FilePath ($resDir + "\SystemInfo.txt") -Append
+  Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
   @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
-  Out-String -Width 300 | Out-File -FilePath ($resDir + "\processes.txt")
+  Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
 }
 
 Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$errfile | Sort-Object -Property InstalledOn | Out-File $resDir\hotfixes.txt
+Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
