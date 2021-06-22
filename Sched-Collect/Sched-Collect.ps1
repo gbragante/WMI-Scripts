@@ -1,6 +1,6 @@
-param( [string]$Path )
+param( [string]$Path, [switch]$AcceptEula )
 
-$version = "Sched-Collect (20210528)"
+$version = "Sched-Collect (20210622)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -10,15 +10,6 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
   Write-Output "This script needs to be run as Administrator"
   exit
 }
-
-Write-Host "This script is designed to collect information that will help Microsoft Customer Support Services (CSS) troubleshoot an issue you may be experiencing with Windows."
-Write-Host "The collected data may contain Personally Identifiable Information (PII) and/or sensitive data, such as (but not limited to) IP addresses, PC names, and user names."
-Write-Host "Once the tracing and data collection has completed, the script will save the data in a subfolder. This folder is not automatically sent to Microsoft."
-Write-Host "You can send this folder to Microsoft CSS using a secure file transfer tool - Please discuss this with your support professional and also any concerns you may have."
-Write-Host "Find our privacy statement here: https://privacy.microsoft.com/en-us/privacy"
-$confirm = Read-Host ("Are you sure you want to continue[Y/N]?")
-if ($confirm.ToLower() -ne "y") {exit}
-
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 if ($Path) {
@@ -39,6 +30,17 @@ $global:errfile = $global:resDir + "\script-errors.txt"
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force
 
 Write-Log $version
+if ($AcceptEula) {
+  Write-Log "AcceptEula switch specified, silently continuing"
+  $eulaAccepted = ShowEULAIfNeeded "Sched-Collect" 2
+} else {
+  $eulaAccepted = ShowEULAIfNeeded "Sched-Collect" 0
+  if($eulaAccepted -ne "Yes") {
+    Write-Log "EULA declined, exiting"
+    exit
+  }
+}
+Write-Log "EULA accepted, continuing"
 
 $pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32_service where Name='Schedule'").ProcessId
 if ($pidsvc) {
