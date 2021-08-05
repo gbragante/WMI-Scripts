@@ -1,4 +1,4 @@
-# ListHosts.ps1 20210622
+# ListHosts.ps1 20210805
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function ExecQuery {
@@ -16,6 +16,16 @@ Function ExecQuery {
 
 [void][System.Reflection.Assembly]::Load('System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a')
 [void][System.Reflection.Assembly]::Load('System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089')
+
+Function Get-ProcBitness {
+  param ([int] $id)
+  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+  if ($proc) {
+    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  } else {
+    Return "Unknown"
+  }
+}
 
 function ShowEULAPopup($mode)
 {
@@ -210,7 +220,7 @@ foreach ($prv in $proc) {
   $ut = [timespan]::fromseconds($us)
   $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
     
-  Write-Host "PID"$prv.ProcessId "Handles:"$prv.HandleCount "Threads:"$prv.ThreadCount "Private KB:"($prv.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime
+  Write-Host "PID"$prv.ProcessId "Handles:"$prv.HandleCount "Threads:"$prv.ThreadCount "Private KB:"($prv.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime (Get-ProcBitness($prv.ProcessId))
   $totMem = $totMem + $prv.PrivatePageCount
   foreach ($provname in $provhost) {
     $provdet = ExecQuery -NameSpace $provname.Namespace -Query ("select * from __Win32Provider where Name = """ + $provname.Provider + """")
@@ -269,7 +279,7 @@ foreach ($proc in $list) {
     }
 
     Write-Host ($prc.ExecutablePath + $svc)
-    Write-Host "PID"$prc.ProcessId "Handles:"$prc.HandleCount "Threads:"$prc.ThreadCount "Private KB:"($prc.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime
+    Write-Host "PID"$prc.ProcessId "Handles:"$prc.HandleCount "Threads:"$prc.ThreadCount "Private KB:"($prc.PrivatePageCount/1kb) "KernelTime:"$kh "UserTime:"$uh "Uptime:"$uptime (Get-ProcBitness($prv.ProcessId))
 
     $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
     $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
