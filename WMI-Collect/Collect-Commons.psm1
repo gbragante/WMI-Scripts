@@ -21,6 +21,16 @@ Function ExecQuery {
   return $ret
 }
 
+Function Get-ProcBitness {
+  param ([int] $id)
+  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+  if ($proc) {
+    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  } else {
+    Return "Unknown"
+  }
+}
+
 Function ArchiveLog {
   param( [string] $LogName )
   $cmd = "wevtutil al """+ $global:resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $global:outfile + """ 2>>""" + $errfile + """"
@@ -467,6 +477,5 @@ function ShowEULAIfNeeded($toolName, $mode)
 	}
 	return $eulaAccepted
 }
-
 
 Export-ModuleMember -Function *
