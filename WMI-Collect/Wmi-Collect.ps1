@@ -1,6 +1,6 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20210811)"
+$version = "WMI-Collect (20210813)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -205,6 +205,11 @@ Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+
+Write-Log "Exporting firewall rules"
+$cmd = "netsh advfirewall firewall show rule name=all >""" + $global:resDir + "\FirewallRules.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting service configuration"
 $cmd = "sc.exe queryex winmgmt >>""" + $global:resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr

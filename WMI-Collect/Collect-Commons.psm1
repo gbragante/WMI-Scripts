@@ -88,6 +88,9 @@ Function Collect-SystemInfoNoWMI {
   "Time zone".PadRight($pad) + " : " + (Get-TimeZone).DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
 }
 
 Function Collect-SystemInfoWMI {
@@ -150,6 +153,9 @@ Function Collect-SystemInfoWMI {
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
 }
 
 Add-Type -MemberDefinition @"
