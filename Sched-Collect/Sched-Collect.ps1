@@ -1,6 +1,6 @@
 param( [string]$Path, [switch]$AcceptEula )
 
-$version = "Sched-Collect (20210622)"
+$version = "Sched-Collect (20210810)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -48,6 +48,14 @@ if ($pidsvc) {
   CreateProcDump $pidsvc $global:resDir "scvhost-Schedule"
 } else {
   Write-Log "Schedule service PID not found"
+}
+
+$pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32_service where Name='SystemEventsBroker'").ProcessId
+if ($pidsvc) {
+  Write-Log "Collecting dump of the svchost process hosting the System Events Broker service"
+  CreateProcDump $pidsvc $global:resDir "scvhost-SystemEventsBroker"
+} else {
+  Write-Log "System Events Broker service PID not found"
 }
 
 $tasks = Get-ScheduledTask
