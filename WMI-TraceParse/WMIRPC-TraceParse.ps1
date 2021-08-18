@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20210401
+# WMIRPC-TraceParse - 20210817
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -438,7 +438,9 @@ while (-not $sr.EndOfStream) {
   while (1 -eq 1) {
     $line = $sr.ReadLine()
     if ($sr.EndOfStream) { break }
-    if ($line.Substring(0,1) -eq "[") { break }
+    if ($line.Length -gt 1) {
+      if ($line.Substring(0,1) -eq "[") { break }
+    }
     $part = $part + $line
   }
 
