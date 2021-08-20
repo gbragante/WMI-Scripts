@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20210817
+# WMIRPC-TraceParse - 20210820
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -429,14 +429,21 @@ $col = New-Object system.Data.DataColumn CommandLine,([string]); $tbProc.Columns
 
 $dtInit = Get-Date
 
+$stopwatch =  [system.diagnostics.stopwatch]::StartNew()
+$procbytes = 0
+$lastProgress = 0
+$totbytes = (get-item $FileName).Length
+
 $sr = new-object System.io.streamreader(get-item $FileName)
 $line = $sr.ReadLine()
+$procbytes = $line.Length
 while (-not $sr.EndOfStream) {
   $part = ""
   $part = $line
 
   while (1 -eq 1) {
     $line = $sr.ReadLine()
+    $procbytes += $line.Length
     if ($sr.EndOfStream) { break }
     if ($line.Length -gt 1) {
       if ($line.Substring(0,1) -eq "[") { break }
@@ -551,6 +558,11 @@ while (-not $sr.EndOfStream) {
 
   if ($part -eq "") {
     $line = $sr.ReadLine()
+    $procbytes += $line.Length
+  }
+  if ($stopwatch.Elapsed.TotalSeconds - $lastProgress -gt 10) {
+    Write-Host ("====[ Progress: " + ($procbytes / $totbytes * 100) + " % ]====")
+    $lastProgress = $stopwatch.Elapsed.TotalSeconds
   }
 }
 $sr.Close()
