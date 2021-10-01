@@ -1,3 +1,5 @@
+# Collect-Commons 20211001
+
 Function Write-Log {
   param( [string] $msg )
 
@@ -43,6 +45,8 @@ Function Win10Ver {
     [string] $Build
   )
 
+  # See https://www.osgwiki.com/wiki/WSD_Wiki-CFE_Decrypting_Windows_Release_Names
+
   if ($build -eq 14393) {
     return " (RS1 / 1607)"
   } elseif ($build -eq 15063) {
@@ -58,11 +62,17 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1)"  
+    return " (2004 / vb)"  
   } elseif ($build -eq 19042) {
-    return " (20H2)"  
+    return " (20H2 / vb)"  
   } elseif ($build -eq 19043) {
-    return " (21H1)"  
+    return " (21H1 / vb)"  
+  } elseif ($build -eq 19044) {
+    return " (21H2 / vb)"  
+  } elseif ($build -eq 20348) {
+    return " (21H1 / fe)"  
+  } elseif ($build -eq 22000) {
+    return " (21H2 / co)"  
   }
 }
 
@@ -89,8 +99,7 @@ Function Collect-SystemInfoNoWMI {
   "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
-  Write-Log "Exporing environment variables"
-  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+  ExpEnvVar
 }
 
 Function Collect-SystemInfoWMI {
@@ -154,8 +163,18 @@ Function Collect-SystemInfoWMI {
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
+  ExpEnvVar
+}
+
+Function ExpEnvVar {
   Write-Log "Exporing environment variables"
   Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+}
+
+Function ExpRegFeatureManagement {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "" """+ $global:resDir + "\FeatureManagement.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+  Invoke-Expression $cmd
 }
 
 Add-Type -MemberDefinition @"
