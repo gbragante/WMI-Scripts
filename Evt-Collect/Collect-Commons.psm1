@@ -1,3 +1,5 @@
+# Collect-Commons 20211001
+
 Function Write-Log {
   param( [string] $msg )
 
@@ -21,6 +23,16 @@ Function ExecQuery {
   return $ret
 }
 
+Function Get-ProcBitness {
+  param ([int] $id)
+  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+  if ($proc) {
+    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  } else {
+    Return "Unknown"
+  }
+}
+
 Function ArchiveLog {
   param( [string] $LogName )
   $cmd = "wevtutil al """+ $global:resDir + "\" + $env:computername + "-" + $LogName + ".evtx"" /l:en-us >>""" + $global:outfile + """ 2>>""" + $errfile + """"
@@ -32,6 +44,8 @@ Function Win10Ver {
   param(
     [string] $Build
   )
+
+  # See https://www.osgwiki.com/wiki/WSD_Wiki-CFE_Decrypting_Windows_Release_Names
 
   if ($build -eq 14393) {
     return " (RS1 / 1607)"
@@ -48,12 +62,119 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1)"  
+    return " (2004 / vb)"  
   } elseif ($build -eq 19042) {
-    return " (20H2)"  
+    return " (20H2 / vb)"  
   } elseif ($build -eq 19043) {
-    return " (21H1)"  
+    return " (21H1 / vb)"  
+  } elseif ($build -eq 19044) {
+    return " (21H2 / vb)"  
+  } elseif ($build -eq 20348) {
+    return " (21H1 / fe)"  
+  } elseif ($build -eq 22000) {
+    return " (21H2 / co)"  
   }
+}
+
+Function Collect-SystemInfoNoWMI {
+  Write-Log "Collecting system information"
+  $pad = 27
+
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
+
+  "Computer name".PadRight($pad) + " : " + $env:COMPUTERNAME | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $env:PROCESSOR_IDENTIFIER | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors cores".PadRight($pad) + " : " + $env:NUMBER_OF_PROCESSORS | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + [System.Environment]::OSVersion.VersionString | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + (Get-TimeZone).DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  ExpEnvVar
+}
+
+Function Collect-SystemInfoWMI {
+  Write-Log "Collecting system information"
+  $pad = 27
+  $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
+  $CS = ExecQuery -Namespace "root\cimv2" -Query "select Model, Manufacturer, SystemType, NumberOfProcessors, NumberOfLogicalProcessors, TotalPhysicalMemory, DNSHostName, Domain, DomainRole from Win32_ComputerSystem"
+  $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
+  $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
+  $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
+
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+
+  "Computer name".PadRight($pad) + " : " + $OS.CSName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Model".PadRight($pad) + " : " + $CS.Model | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Manufacturer".PadRight($pad) + " : " + $CS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Version".PadRight($pad) + " : " + $BIOS.BIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Manufacturer".PadRight($pad) + " : " + $BIOS.Manufacturer | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "BIOS Release date".PadRight($pad) + " : " + $BIOS.ReleaseDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SMBIOS Version".PadRight($pad) + " : " + $BIOS.SMBIOSBIOSVersion | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "SystemType".PadRight($pad) + " : " + $CS.SystemType | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $PR.Name + " / " + $PR.Caption | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors physical/logical".PadRight($pad) + " : " + $CS.NumberOfProcessors + " / " + $CS.NumberOfLogicalProcessors | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Memory physical/visible".PadRight($pad) + " : " + ("{0:N0}" -f ($CS.TotalPhysicalMemory/1mb)) + " MB / " + ("{0:N0}" -f ($OS.TotalVisibleMemorySize/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Language packs".PadRight($pad) + " : " + ($OS.MUILanguages -join " ") | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Install date".PadRight($pad) + " : " + $OS.InstallDate | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Last boot time".PadRight($pad) + " : " + $OS.LastBootUpTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + $OS.LocalDateTime | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Hostname".PadRight($pad) + " : " + $CS.DNSHostName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "DNS Domain name".PadRight($pad) + " : " + $CS.Domain | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  $roles = "Standalone Workstation", "Member Workstation", "Standalone Server", "Member Server", "Backup Domain Controller", "Primary Domain Controller"
+  "Domain role".PadRight($pad) + " : " + $roles[$CS.DomainRole] | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  $drives = @()
+  $drvtype = "Unknown", "No Root Directory", "Removable Disk", "Local Disk", "Network Drive", "Compact Disc", "RAM Disk"
+  $Vol = ExecQuery -NameSpace "root\cimv2" -Query "select * from Win32_LogicalDisk"
+  foreach ($disk in $vol) {
+    $drv = New-Object PSCustomObject
+    $drv | Add-Member -type NoteProperty -name Letter -value $disk.DeviceID 
+    $drv | Add-Member -type NoteProperty -name DriveType -value $drvtype[$disk.DriveType]
+    $drv | Add-Member -type NoteProperty -name VolumeName -value $disk.VolumeName 
+    $drv | Add-Member -type NoteProperty -Name TotalMB -Value ($disk.size)
+    $drv | Add-Member -type NoteProperty -Name FreeMB -value ($disk.FreeSpace)
+    $drives += $drv
+  }
+  $drives | 
+  Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
+  Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  ExpEnvVar
+}
+
+Function ExpEnvVar {
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+}
+
+Function ExpRegFeatureManagement {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "" """+ $global:resDir + "\FeatureManagement.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+  Invoke-Expression $cmd
 }
 
 Add-Type -MemberDefinition @"
@@ -467,6 +588,5 @@ function ShowEULAIfNeeded($toolName, $mode)
 	}
 	return $eulaAccepted
 }
-
 
 Export-ModuleMember -Function *
