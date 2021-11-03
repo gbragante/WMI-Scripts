@@ -1,6 +1,6 @@
-param( [string]$Path, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211004)"
+$version = "Evt-Collect (20211103)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -35,9 +35,18 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
-$resName = "Evt-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$global:resDir = $global:Root + "\" + $resName
-$subDir = $global:resDir + "\WMISubscriptions"
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not esist"
+    exit
+  }
+  $global:resDir = $DataPath
+} else {
+  $resName = "Evt-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+  $global:resDir = $global:Root + "\" + $resName
+  New-Item -itemtype directory -path $global:resDir | Out-Null
+}
+
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
 
@@ -48,9 +57,6 @@ $RdrErr =  " 2>>""" + $global:errfile + """"
 $fqdn = [System.Net.Dns]::GetHostByName(($env:computerName)).HostName
 
 $OSVer = ([environment]::OSVersion.Version.Major) + ([environment]::OSVersion.Version.Minor) /10
-
-New-Item -itemtype directory -path $global:resDir | Out-Null
-New-Item -itemtype directory -path $subDir | Out-Null
 
 Write-Log $version
 if ($AcceptEula) {
@@ -250,3 +256,8 @@ if ($proc) {
 
 Write-Log "Collecting the list of installed hotfixes"
 Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $global:resDir\hotfixes.txt
+
+Write-Log "Exporting driverquery /v output"
+$cmd = "driverquery /v >""" + $global:resDir + "\drivers.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
