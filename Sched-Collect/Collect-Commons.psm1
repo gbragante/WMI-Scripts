@@ -1,4 +1,4 @@
-# Collect-Commons 20211001
+# Collect-Commons 20211104
 
 Function Write-Log {
   param( [string] $msg )
@@ -205,7 +205,7 @@ $UserDumpCode=@'
 using System;
 using System.Runtime.InteropServices;
 
-namespace MSDATA
+namespace MSCOLLECT
 {
     public static class UserDump
     {
@@ -290,7 +290,17 @@ Function CreateProcDump {
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
   if (Test-Path ($global:root + "\procdump.exe")) {
-    $cmd = "&""" + $global:root + "\procdump.exe"" -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
+    $ProcDumpPath = $global:root + "\procdump.exe"
+    Write-Log ("ProcDump found in " + $ProcDumpPath)
+  } else {
+    if (Test-Path (($global:root | Split-Path) + "\bin\procdump.exe")) {
+      $ProcDumpPath = ($global:root | Split-Path) + "\bin\procdump.exe"
+      Write-Log ("ProcDump found in " + $ProcDumpPath)
+    }
+  }
+
+  if ($ProcDumpPath) {
+    $cmd = "&""" + $ProcDumpPath + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
 
@@ -309,7 +319,7 @@ Function CreateProcDump {
 
   if (-not $DumpCreated) {
     Write-Log "Cannot create the dump with ProcDump, trying the backup method"
-    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+    if ([MSCOLLECT.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
       Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
     } else {
       Write-Log "Failed to create the dump for the Process ID $ProcID"
@@ -324,7 +334,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 
-namespace MSDATA {
+namespace MSCOLLECT {
   public static class FindService {
 
     public static void Main(){
@@ -382,7 +392,7 @@ add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies Sys
 Function FindServicePid {
   param( $SvcName)
   try {
-    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    $pidsvc = [MSCOLLECT.FindService]::FindServicePid($SvcName)
     return $pidsvc
   }
   catch {

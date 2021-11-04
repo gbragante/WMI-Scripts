@@ -1,6 +1,6 @@
-param( [string]$Path, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Sched-Collect (20211001)"
+$version = "Sched-Collect (20211104)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -12,12 +12,12 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
-if ($Path) {
-  if (-not (Test-Path $path)) {
-    Write-Host "The folder $Path does not esist"
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not esist"
     exit
   }
-  $global:resDir = $Path
+  $global:resDir = $DataPath
 } else {
   $resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
   $global:resDir = $global:Root + "\" + $resName
@@ -112,6 +112,15 @@ Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting ipconfig /all output"
 $cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+Write-Log "Collecing GPResult output"
+$cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
+write-log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+$cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
