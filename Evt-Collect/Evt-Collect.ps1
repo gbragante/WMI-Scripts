@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211103)"
+$version = "Evt-Collect (20211104)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -176,8 +176,13 @@ $cmd = "cacls C:\Windows\System32\LogFiles\WMI\RtBackup >>""" + $global:resDir +
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-Write-Log "Getting a copy of the RTBackup folder"
-Copy-Item "C:\Windows\System32\LogFiles\WMI\RtBackup" -Recurse $global:resDir -ErrorAction SilentlyContinue
+try {
+  Write-Log "Getting a copy of the RTBackup folder"
+  Copy-Item "C:\Windows\System32\LogFiles\WMI\RtBackup" -Recurse $global:resDir -ErrorAction SilentlyContinue
+}
+catch {
+  Write-Log "Cannot access the RTBackup folder, please run the script as SYSTEM with PSExec"
+}
 
 Write-Log "Listing evtx files"
 Get-ChildItem $env:windir\System32\winevt\Logs -Recurse | Out-File $global:resDir\WinEvtLogs.txt

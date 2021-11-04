@@ -1,4 +1,4 @@
-# Collect-Commons 20211103
+# Collect-Commons 20211104
 
 Function Write-Log {
   param( [string] $msg )
@@ -290,7 +290,17 @@ Function CreateProcDump {
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
   if (Test-Path ($global:root + "\procdump.exe")) {
-    $cmd = "&""" + $global:root + "\procdump.exe"" -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
+    $ProcDumpPath = $global:root + "\procdump.exe"
+    Write-Log ("ProcDump found in " + $ProcDumpPath)
+  } else {
+    if (Test-Path (($global:root | Split-Path) + "\bin\procdump.exe")) {
+      $ProcDumpPath = ($global:root | Split-Path) + "\bin\procdump.exe"
+      Write-Log ("ProcDump found in " + $ProcDumpPath)
+    }
+  }
+
+  if ($ProcDumpPath) {
+    $cmd = "&""" + $ProcDumpPath + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
 
