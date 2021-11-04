@@ -1,6 +1,6 @@
-param( [string]$Path, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20210810)"
+$version = "DSC-Collect (20211104)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -13,14 +13,22 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
-$resName = "DSC-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$global:resDir = $global:Root + "\" + $resName
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not esist"
+    exit
+  }
+  $global:resDir = $DataPath
+} else {
+  $resName = "DSC-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+  $global:resDir = $global:Root + "\" + $resName
+  New-Item -itemtype directory -path $global:resDir | Out-Null
+}
+
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
 
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
-
-New-Item -itemtype directory -path $global:resDir | Out-Null
 
 Write-Log $version
 if ($AcceptEula) {
@@ -45,7 +53,12 @@ if (Test-Path -Path "C:\Program Files\WindowsPowerShell\DscService\RegistrationK
 }
 
 Write-Log "Collecing the dumps of the WMIPrvSE process having dsccore.dll or dsctimer.dll loaded"
-$list = Get-Process -Name "WmiPrvSe" -ErrorAction SilentlyContinue 2>>$global:errfile
+try {
+  $list = Get-Process -Name "WmiPrvSe" -ErrorAction SilentlyContinue 2>>$global:errfile
+}
+catch {
+  Write-Log "Can't find any running WMIPrvSE process"
+}
 if (($list | measure).count -gt 0) {
   foreach ($proc in $list)
   {
@@ -161,14 +174,19 @@ Get-DscResource | Out-File -FilePath ($global:resDir + "\Get-DscResource.txt")
 Write-Log "Get-DscLocalConfigurationManager output"
 Get-DscLocalConfigurationManager | Out-File -FilePath ($global:resDir + "\Get-DscLocalConfigurationManager.txt")
 
-Write-Log "Get-DscConfiguration output"
-Get-DscConfiguration | Out-File -FilePath ($global:resDir + "\Get-DscConfiguration.txt")
+try {
+  Write-Log "Get-DscConfiguration output"
+  Get-DscConfiguration | Out-File -FilePath ($global:resDir + "\Get-DscConfiguration.txt")
+} 
+catch {
+  Write-Log "Get-DscConfiguration failed, DSC not configured on this machine?"
+}
 
 Write-Log "Get-DscConfigurationStatus output"
 Get-DscConfigurationStatus -all 2>>$global:errfile | Out-File -FilePath ($global:resDir + "\Get-DscConfigurationStatus.txt")
 
 $dir = $env:windir + "\system32\inetsrv"
-if (Test-Path -Path $dir) {
+if (Test-Path -Path ($dir + "\appcmd.exe")) {
   $cmd = $dir + "\appcmd list wp >""" + $global:resDir + "\IIS-WorkerProcesses.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append  
@@ -284,7 +302,7 @@ if ($proc.count -gt 3) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
-  Collect-SystemInfo
+  Collect-SystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
@@ -293,6 +311,7 @@ if ($proc.count -gt 3) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
+  Collect-SystemInfoNoWMI
   Write-Log "Exiting since WMI is not working"
   exit
 }

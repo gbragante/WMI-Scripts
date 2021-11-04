@@ -1,3 +1,5 @@
+# Collect-Commons 20211104
+
 Function Write-Log {
   param( [string] $msg )
 
@@ -43,6 +45,8 @@ Function Win10Ver {
     [string] $Build
   )
 
+  # See https://www.osgwiki.com/wiki/WSD_Wiki-CFE_Decrypting_Windows_Release_Names
+
   if ($build -eq 14393) {
     return " (RS1 / 1607)"
   } elseif ($build -eq 15063) {
@@ -58,15 +62,47 @@ Function Win10Ver {
   } elseif ($build -eq 18363) {
     return " (19H2 / 1909)"    
   } elseif ($build -eq 19041) {
-    return " (20H1)"  
+    return " (2004 / vb)"  
   } elseif ($build -eq 19042) {
-    return " (20H2)"  
+    return " (20H2 / vb)"  
   } elseif ($build -eq 19043) {
-    return " (21H1)"  
+    return " (21H1 / vb)"  
+  } elseif ($build -eq 19044) {
+    return " (21H2 / vb)"  
+  } elseif ($build -eq 20348) {
+    return " (21H1 / fe)"  
+  } elseif ($build -eq 22000) {
+    return " (21H2 / co)"  
   }
 }
 
-Function Collect-SystemInfo {
+Function Collect-SystemInfoNoWMI {
+  Write-Log "Collecting system information"
+  $pad = 27
+
+  $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolPaged = $ctr.CounterSamples[0].CookedValue 
+  $ctr = Get-Counter -Counter "\Memory\Pool Nonpaged Bytes" -ErrorAction Continue 2>>$global:errfile
+  $PoolNonPaged = $ctr.CounterSamples[0].CookedValue 
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
+
+  "Computer name".PadRight($pad) + " : " + $env:COMPUTERNAME | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processor".PadRight($pad) + " : " + $env:PROCESSOR_IDENTIFIER | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Processors cores".PadRight($pad) + " : " + $env:NUMBER_OF_PROCESSORS | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Operating System".PadRight($pad) + " : " + [System.Environment]::OSVersion.VersionString | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Build Number".PadRight($pad) + " : " + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Time zone".PadRight($pad) + " : " + (Get-TimeZone).DisplayName | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Local time".PadRight($pad) + " : " + (Get-Date) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  ExpEnvVar
+}
+
+Function Collect-SystemInfoWMI {
   Write-Log "Collecting system information"
   $pad = 27
   $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
@@ -74,6 +110,7 @@ Function Collect-SystemInfo {
   $BIOS = ExecQuery -Namespace "root\cimv2" -query "select BIOSVersion, Manufacturer, ReleaseDate, SMBIOSBIOSVersion from Win32_BIOS"
   $TZ = ExecQuery -Namespace "root\cimv2" -Query "select Description from Win32_TimeZone"
   $PR = ExecQuery -Namespace "root\cimv2" -Query "select Name, Caption from Win32_Processor"
+  $proc = Get-Process | Select-Object Name, ID, Handles, @{Name='ThreadCount';Expression ={$_.Threads.Count}}
 
   $ctr = Get-Counter -Counter "\Memory\Pool Paged Bytes" -ErrorAction Continue 2>>$global:errfile
   $PoolPaged = $ctr.CounterSamples[0].CookedValue 
@@ -94,6 +131,9 @@ Function Collect-SystemInfo {
   "Pool Paged / NonPaged".PadRight($pad) + " : " + ("{0:N0}" -f ($PoolPaged/1mb)) + " MB / " + ("{0:N0}" -f ($PoolNonPaged/1mb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Free physical memory".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.FreePhysicalMemory/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Paging files size / free".PadRight($pad) + " : " + ("{0:N0}" -f ($OS.SizeStoredInPagingFiles/1kb)) + " MB / " + ("{0:N0}" -f ($OS.FreeSpaceInPagingFiles/1kb)) + " MB" | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of processes".PadRight($pad) + " : " + ("{0:N0}" -f ($proc.Count))| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of threads".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property ThreadCount -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+  "Total number of handles".PadRight($pad) + " : " + ("{0:N0}" -f ($proc | Measure-Object -Property Handles -Sum).Sum)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Operating System".PadRight($pad) + " : " + $OS.Caption + " " + $OS.OSArchitecture | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Build Number".PadRight($pad) + " : " + $OS.BuildNumber + "." + (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ubr + (Win10Ver $OS.BuildNumber)| Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
   "Time zone".PadRight($pad) + " : " + $TZ.Description | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
@@ -122,6 +162,19 @@ Function Collect-SystemInfo {
   $drives | 
   Format-Table -AutoSize -property Letter, DriveType, VolumeName, @{N="TotalMB";E={"{0:N0}" -f ($_.TotalMB/1MB)};a="right"}, @{N="FreeMB";E={"{0:N0}" -f ($_.FreeMB/1MB)};a="right"} |
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
+
+  ExpEnvVar
+}
+
+Function ExpEnvVar {
+  Write-Log "Exporing environment variables"
+  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+}
+
+Function ExpRegFeatureManagement {
+  Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "
+  $cmd = "reg export ""HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides "" """+ $global:resDir + "\FeatureManagement.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+  Invoke-Expression $cmd
 }
 
 Add-Type -MemberDefinition @"
@@ -152,7 +205,7 @@ $UserDumpCode=@'
 using System;
 using System.Runtime.InteropServices;
 
-namespace MSDATA
+namespace MSCOLLECT
 {
     public static class UserDump
     {
@@ -237,7 +290,17 @@ Function CreateProcDump {
   $DumpFile = $DumpFolder + "\" + $filename + "-" + $ProcID + "_" + (get-date).ToString("yyyyMMdd_HHmmss") + ".dmp"
   
   if (Test-Path ($global:root + "\procdump.exe")) {
-    $cmd = "&""" + $global:root + "\procdump.exe"" -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
+    $ProcDumpPath = $global:root + "\procdump.exe"
+    Write-Log ("ProcDump found in " + $ProcDumpPath)
+  } else {
+    if (Test-Path (($global:root | Split-Path) + "\bin\procdump.exe")) {
+      $ProcDumpPath = ($global:root | Split-Path) + "\bin\procdump.exe"
+      Write-Log ("ProcDump found in " + $ProcDumpPath)
+    }
+  }
+
+  if ($ProcDumpPath) {
+    $cmd = "&""" + $ProcDumpPath + """ -accepteula -ma $ProcID """ + $DumpFile + """ >>""" + $global:outfile + """ 2>>""" + $errfile + """"
     Write-Log $cmd
     Invoke-Expression $cmd
 
@@ -256,7 +319,7 @@ Function CreateProcDump {
 
   if (-not $DumpCreated) {
     Write-Log "Cannot create the dump with ProcDump, trying the backup method"
-    if ([MSDATA.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
+    if ([MSCOLLECT.UserDump]::GenerateUserDump($ProcID, $DumpFile)) {
       Write-Log ("The dump for the Process ID $ProcID was generated as $DumpFile")
     } else {
       Write-Log "Failed to create the dump for the Process ID $ProcID"
@@ -271,7 +334,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 
-namespace MSDATA {
+namespace MSCOLLECT {
   public static class FindService {
 
     public static void Main(){
@@ -329,7 +392,7 @@ add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies Sys
 Function FindServicePid {
   param( $SvcName)
   try {
-    $pidsvc = [MSDATA.FindService]::FindServicePid($SvcName)
+    $pidsvc = [MSCOLLECT.FindService]::FindServicePid($SvcName)
     return $pidsvc
   }
   catch {
