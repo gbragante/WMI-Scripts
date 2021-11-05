@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Sched-Collect (20211104)"
+$version = "Sched-Collect (20211105)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -12,17 +12,19 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+$resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+
 if ($DataPath) {
   if (-not (Test-Path $DataPath)) {
     Write-Host "The folder $DataPath does not esist"
     exit
   }
-  $global:resDir = $DataPath
+  $global:resDir = $DataPath + "\" + $resName
 } else {
-  $resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
   $global:resDir = $global:Root + "\" + $resName
-  New-Item -itemtype directory -path $global:resDir | Out-Null
 }
+
+New-Item -itemtype directory -path $global:resDir | Out-Null
 
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
