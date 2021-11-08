@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211105)"
+$version = "Evt-Collect (20211108)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -38,7 +38,7 @@ $resName = "Evt-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmm
 
 if ($DataPath) {
   if (-not (Test-Path $DataPath)) {
-    Write-Host "The folder $DataPath does not esist"
+    Write-Host "The folder $DataPath does not exist"
     exit
   }
   $global:resDir = $DataPath + "\" + $resName
