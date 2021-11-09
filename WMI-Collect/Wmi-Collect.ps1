@@ -1,6 +1,6 @@
-param( [string]$Path, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20210813)"
+$version = "WMI-Collect (20211109)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -24,17 +24,19 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
-if ($Path) {
-  if (-not (Test-Path $path)) {
-    Write-Host "The folder $Path does not esist"
+$resName = "WMI-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not exist"
     exit
   }
-  $global:resDir = $Path
+  $global:resDir = $DataPath
 } else {
-  $resName = "WMI-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
   $global:resDir = $global:Root + "\" + $resName
-  New-Item -itemtype directory -path $global:resDir | Out-Null
 }
+
+New-Item -itemtype directory -path $global:resDir | Out-Null
 $subDir = $global:resDir + "\Subscriptions"
 New-Item -itemtype directory -path $subDir | Out-Null
 
