@@ -1,4 +1,4 @@
-# Collect-Commons 20211104
+# Collect-Commons 20211108
 
 Function Write-Log {
   param( [string] $msg )
@@ -31,6 +31,18 @@ Function Get-ProcBitness {
   } else {
     Return "Unknown"
   }
+}
+
+Function GetOwnerCim{
+  param( $prc )
+  $ret = Invoke-CimMethod -InputObject $prc -MethodName GetOwner
+  return ($ret.Domain + "\" + $ret.User)
+}
+
+Function GetOwnerWmi{
+  param( $prc )
+  $ret = $prc.GetOwner()
+  return ($ret.Domain + "\" + $ret.User)
 }
 
 Function ArchiveLog {

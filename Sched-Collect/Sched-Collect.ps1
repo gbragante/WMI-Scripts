@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Sched-Collect (20211105)"
+$version = "Sched-Collect (20211109)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -16,7 +16,7 @@ $resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HH
 
 if ($DataPath) {
   if (-not (Test-Path $DataPath)) {
-    Write-Host "The folder $DataPath does not esist"
+    Write-Host "The folder $DataPath does not exist"
     exit
   }
   $global:resDir = $DataPath + "\" + $resName
