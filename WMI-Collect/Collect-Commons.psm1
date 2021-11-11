@@ -1,4 +1,4 @@
-# Collect-Commons 20211108
+# Collect-Commons 20211111
 
 Function Write-Log {
   param( [string] $msg )
@@ -350,7 +350,7 @@ namespace MSCOLLECT {
   public static class FindService {
 
     public static void Main(){
-	  Console.WriteLine("Hello world!");
+	  // empty function
 	}
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
@@ -370,7 +370,6 @@ namespace MSCOLLECT {
     public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
 
     public static int FindServicePid(string SvcName) {
-      //Console.WriteLine("Hello world!");
       ServiceController sc = new ServiceController(SvcName);
       if (sc == null) {
         return -1;
