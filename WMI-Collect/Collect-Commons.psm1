@@ -1,4 +1,4 @@
-# Collect-Commons 20211111
+# Collect-Commons 20211112
 
 Function Write-Log {
   param( [string] $msg )
@@ -19,17 +19,21 @@ Function ExecQuery {
   } else {
     $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
   }
-  Write-Log (($ret | measure).count.ToString() + " results")
+  Write-Log (($ret | Measure-Object).count.ToString() + " results")
   return $ret
 }
 
 Function Get-ProcBitness {
   param ([int] $id)
-  $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
-  if ($proc) {
-    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+  if ($PSVersionTable.PSEdition -eq "Core") {
+      Return ""  # StartInfo is not availabe in PowerShell Core, investigating for an alternative
   } else {
-    Return "Unknown"
+    $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+    if ($proc) {
+      Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+    } else {
+      Return ""
+    }
   }
 }
 
@@ -398,7 +402,11 @@ namespace MSCOLLECT {
   }
 }
 '@
-add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+if ($PSVersionTable.PSEdition -eq "Core") {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess.ServiceController, System.ComponentModel.Primitives
+} else {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+}
 
 Function FindServicePid {
   param( $SvcName)

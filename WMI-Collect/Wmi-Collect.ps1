@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20211109)"
+$version = "WMI-Collect (20211112)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -68,10 +68,10 @@ if ($pidsvc) {
   Write-Log "Cannot find the PID using FindServicePid, looping through processes"
   $list = Get-Process
   $found = $false
-  if (($list | measure).count -gt 0) {
+  if (($list | Measure-Object ).count -gt 0) {
     foreach ($proc in $list) {
       $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
-      if (($prov | measure).count -gt 0) {
+      if (($prov | Measure-Object).count -gt 0) {
         Write-Log "Found the PID having wmisvc.dll loaded"
         CreateProcDump $proc.id $global:resDir "scvhost-WinMgmt"
         $found = $true
@@ -86,7 +86,7 @@ if ($pidsvc) {
 
 Write-Log "Collecing the dumps of WMIPrvSE.exe processes"
 $list = get-process -Name "WmiPrvSe" -ErrorAction SilentlyContinue 2>>$global:errfile
-if (($list | measure).count -gt 0) {
+if (($list | Measure-Object).count -gt 0) {
   foreach ($proc in $list)
   {
     Write-Log ("Found WMIPrvSE.exe with PID " + $proc.Id)
@@ -98,11 +98,11 @@ if (($list | measure).count -gt 0) {
 
 Write-Log "Collecing the dumps of decoupled WMI providers"
 $list = Get-Process
-if (($list | measure).count -gt 0) {
+if (($list | Measure-Object).count -gt 0) {
   foreach ($proc in $list)
   {
     $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
-    if (($prov | measure).count -gt 0) {
+    if (($prov | Measure-Object).count -gt 0) {
       Write-Log ("Found " + $proc.Name + "(" + $proc.id + ")")
       CreateProcDump $proc.id $global:resDir
     }
@@ -117,7 +117,7 @@ if ($proc) {
 
 Write-Log "Collecing the dumps of scrcons.exe processes"
 $list = get-process -Name "scrcons" -ErrorAction SilentlyContinue 2>>$global:errfile
-if (($list | measure).count -gt 0) {
+if (($list | Measure-Object).count -gt 0) {
   foreach ($proc in $list)
   {
     CreateProcDump $proc.id $global:resDir
@@ -289,7 +289,7 @@ $DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microso
 $DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
 $DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
 $DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
- 
+
 # Convert the current permissions to SDDL
 $converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
 "Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
@@ -314,7 +314,7 @@ if ($prov) {
   foreach ($prv in $proc) {
     $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
 
-    if (($provhost | measure).count -gt 0) {
+    if (($provhost | Measure-Object).count -gt 0) {
       if ($PSVersionTable.psversion.ToString() -ge "3.0") {
         $ut = New-TimeSpan -Start $prv.CreationDate
       } else {
