@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211108)"
+$version = "Evt-Collect (20211118)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -25,15 +25,11 @@ Function EvtLogDetails {
   }
 }
 
-$myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-$myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
-$adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
-if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
-  Write-Output "This script needs to be run as Administrator"
-  exit
-}
-
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
+
+Deny-IfNotAdmin
+
 $resName = "Evt-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
 
 if ($DataPath) {
@@ -50,8 +46,6 @@ New-Item -itemtype directory -path $global:resDir | Out-Null
 
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
-
-Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 $RdrOut =  " >>""" + $global:outfile + """"
 $RdrErr =  " 2>>""" + $global:errfile + """"
@@ -78,10 +72,7 @@ if ($pidEventLog) {
   CreateProcDump $pidEventLog $global:resDir "scvhost-EventLog"
 }
 
-Write-Log "Exporting ipconfig /all output"
-$cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+Invoke-CustomCommand -Command "ipconfig /all" -DestinationFile "ipconfig.txt"
 
 Write-Log "Collecing GPResult output"
 $cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
@@ -131,17 +122,8 @@ Write-Log $cmd
 Invoke-Expression $cmd
 
 if ((Get-Service EventLog).Status -eq "Running") {
-  Write-Log "Exporting System log"
-  $cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-  ArchiveLog "System"
-
-  Write-Log "Exporting Application log"
-  $cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx""" + $RdrOut + $RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-  ArchiveLog "Application"
+  Export-EventLog -LogName "Application"
+  Export-EventLog -LogName "System"
 
   Write-Log "Exporting Kernel-EventTracing log"
   $cmd = "wevtutil epl ""Microsoft-Windows-Kernel-EventTracing/Admin"" """+ $global:resDir + "\" + $env:computername + "-EventTracing.evtx""" + $RdrOut + $RdrErr
@@ -247,7 +229,7 @@ if ($proc) {
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
 
-  Collect-SystemInfoWMI
+  CollectSystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
@@ -256,7 +238,7 @@ if ($proc) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
-  Collect-SystemInfoNoWMI
+  CollectSystemInfoNoWMI
   Write-Log "Exiting since WMI is not working"
 }
 

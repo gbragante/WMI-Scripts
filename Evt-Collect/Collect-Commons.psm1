@@ -1,4 +1,4 @@
-# Collect-Commons 20211108
+# Collect-Commons 20211118
 
 Function Write-Log {
   param( [string] $msg )
@@ -19,7 +19,7 @@ Function ExecQuery {
   } else {
     $ret = Get-WmiObject -Namespace $NameSpace -Query $Query -ErrorAction Continue 2>>$errfile
   }
-  Write-Log (($ret | measure).count.ToString() + " results")
+  Write-Log (($ret | Measure-Object).count.ToString() + " results")
   return $ret
 }
 
@@ -88,7 +88,7 @@ Function Win10Ver {
   }
 }
 
-Function Collect-SystemInfoNoWMI {
+Function CollectSystemInfoNoWMI {
   Write-Log "Collecting system information"
   $pad = 27
 
@@ -114,7 +114,7 @@ Function Collect-SystemInfoNoWMI {
   ExpEnvVar
 }
 
-Function Collect-SystemInfoWMI {
+Function CollectSystemInfoWMI {
   Write-Log "Collecting system information"
   $pad = 27
   $OS = ExecQuery -Namespace "root\cimv2" -Query "select Caption, CSName, OSArchitecture, BuildNumber, InstallDate, LastBootUpTime, LocalDateTime, TotalVisibleMemorySize, FreePhysicalMemory, SizeStoredInPagingFiles, FreeSpaceInPagingFiles, MUILanguages from Win32_OperatingSystem"
@@ -594,7 +594,7 @@ function ShowEULAIfNeeded($toolName, $mode)
 	if($mode -eq 2) # silent accept
 	{
 		$eulaAccepted = "Yes"
-       		$ignore = New-ItemProperty -Path $eulaRegPath -Name $eulaValue -Value $eulaAccepted -PropertyType String -Force
+        New-ItemProperty -Path $eulaRegPath -Name $eulaValue -Value $eulaAccepted -PropertyType String -Force | Out-Null
 	}
 	else
 	{
@@ -610,5 +610,60 @@ function ShowEULAIfNeeded($toolName, $mode)
 	}
 	return $eulaAccepted
 }
+
+function Export-RegistryKey {
+  param (
+    [string]$KeyPath,
+    [string]$DestinationFile
+  )
+
+  if (Test-Path -Path $KeyPath) {
+    Write-Log "Exporting registry key ${KeyPath}"
+    $cmd = "reg export ""$($KeyPath -replace ':','')"" """ + $global:resDir + "\${DestinationFile}""" + $global:RdrOut + $global:RdrErr
+    Invoke-Expression $cmd
+  }
+  else {
+    Write-Log "The ${KeyPath} registry key does not exist on this device."
+  }
+}
+
+function Export-EventLog {
+  param (
+    [string]$LogName
+  )
+  
+  $cmd = "wevtutil epl ${LogName} """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
+  Write-Log $cmd
+  Invoke-Expression $cmd
+  ArchiveLog ($LogName -replace '/', '_')
+} 
+
+function Invoke-CustomCommand {
+  param (
+    [string]$Command,
+    [string]$DestinationFile
+  )
+  
+  Write-Log "Getting ${Command} output."
+  if ([string]::IsNullOrEmpty($DestinationFile)) {
+    $cmd = "${Command}" + $global:RdrErr
+  } 
+  else {
+    $cmd = "${Command} >""" + $global:resDir + "\${DestinationFile}""" + $global:RdrErr
+  }
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+}
+
+function Deny-IfNotAdmin {
+  $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+  $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
+  $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
+  if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
+    Write-Output "This script needs to be run as Administrator"
+    exit
+  }
+  
+} 
 
 Export-ModuleMember -Function *
