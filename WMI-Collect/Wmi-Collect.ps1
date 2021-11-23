@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20211112)"
+$version = "WMI-Collect (20211123)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -269,7 +269,7 @@ if ($proc.count -gt 3) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
-  Collect-SystemInfoWMI
+  CollectSystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
@@ -278,7 +278,7 @@ if ($proc.count -gt 3) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
-  Collect-SystemInfoNoWMI
+  CollectSystemInfoNoWMI
   Write-Log "Exiting since WMI is not working"
   exit
 }
