@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20211108)"
+$version = "DSC-Collect (20211123)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -192,6 +192,10 @@ if (Test-Path -Path ($dir + "\appcmd.exe")) {
   Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append  
 }
 
+Write-Log "Get-WinSystemLocale output"
+"Get-WinSystemLocale" | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+Get-WinSystemLocale | Out-File -FilePath ($global:resDir + "\LanguageInfo.txt") -Append
+
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP"
 $cmd = "reg export HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP """+ $global:resDir + "\HTTP.reg.txt"" /y" + $RdrOut + $RdrErr
 Write-Log $cmd
@@ -302,7 +306,7 @@ if ($proc.count -gt 3) {
     $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
     Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
   }
-  Collect-SystemInfoWMI
+  CollectSystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 } else {
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
@@ -311,7 +315,7 @@ if ($proc.count -gt 3) {
   @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
-  Collect-SystemInfoNoWMI
+  CollectSystemInfoNoWMI
   Write-Log "Exiting since WMI is not working"
   exit
 }
