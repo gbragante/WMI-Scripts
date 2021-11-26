@@ -1,4 +1,4 @@
-# Collect-Commons 20211118
+# Collect-Commons 20211123
 
 Function Write-Log {
   param( [string] $msg )
@@ -23,13 +23,40 @@ Function ExecQuery {
   return $ret
 }
 
+if ($PSVersionTable.PSEdition -eq "Core") {
+  Add-Type -MemberDefinition @'
+  [DllImport("kernel32.dll", SetLastError = true, CallingConvention = CallingConvention.Winapi)] [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool IsWow64Process(
+    [In] System.IntPtr hProcess,
+    [Out, MarshalAs(UnmanagedType.Bool)] out bool wow64Process);
+'@ -Name NativeMethods -Namespace Kernel32
+}
+
 Function Get-ProcBitness {
   param ([int] $id)
   $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
   if ($proc) {
-    Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+    if ($PSVersionTable.PSEdition -eq "Core") {
+      $is32Bit = [int]0
+      if ([Kernel32.NativeMethods]::IsWow64Process($proc.Handle, [ref]$is32Bit)) {
+        if ($is32Bit) {
+          return "(x86)"
+        } else {
+          return "(x64)"
+        }
+      } else {
+        return ""
+      }
+    } else {
+      $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+      if ($proc) {
+        Return ("(" + $proc.StartInfo.EnvironmentVariables["PROCESSOR_ARCHITECTURE"] + ")")
+      } else {
+        Return ""
+      }
+    }
   } else {
-    Return "Unknown"
+    return ""
   }
 }
 
@@ -350,7 +377,7 @@ namespace MSCOLLECT {
   public static class FindService {
 
     public static void Main(){
-	  Console.WriteLine("Hello world!");
+	  // empty function
 	}
 
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
@@ -370,7 +397,6 @@ namespace MSCOLLECT {
     public static extern bool QueryServiceStatusEx(IntPtr serviceHandle, int infoLevel, IntPtr buffer, int bufferSize, out int bytesNeeded);
 
     public static int FindServicePid(string SvcName) {
-      //Console.WriteLine("Hello world!");
       ServiceController sc = new ServiceController(SvcName);
       if (sc == null) {
         return -1;
@@ -399,7 +425,11 @@ namespace MSCOLLECT {
   }
 }
 '@
-add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+if ($PSVersionTable.PSEdition -eq "Core") {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess.ServiceController, System.ComponentModel.Primitives
+} else {
+  add-type -TypeDefinition $FindPIDCode -Language CSharp -ReferencedAssemblies System.ServiceProcess
+}
 
 Function FindServicePid {
   param( $SvcName)
@@ -604,7 +634,7 @@ function ShowEULAIfNeeded($toolName, $mode)
 			if($eulaAccepted -eq [System.Windows.Forms.DialogResult]::Yes)
 			{
 	        		$eulaAccepted = "Yes"
-	        		$ignore = New-ItemProperty -Path $eulaRegPath -Name $eulaValue -Value $eulaAccepted -PropertyType String -Force
+	        		New-ItemProperty -Path $eulaRegPath -Name $eulaValue -Value $eulaAccepted -PropertyType String -Force | Out-Null
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211118)"
+$version = "Evt-Collect (20211126)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
