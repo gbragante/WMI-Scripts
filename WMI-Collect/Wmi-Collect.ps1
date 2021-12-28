@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20211123)"
+$version = "WMI-Collect (20211228)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -237,41 +237,165 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\WmiPerfClass.dll") -Log $tr
 FileVersion -Filepath ($env:windir + "\system32\wbem\WmiApRpl.dll") -Log $true
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath, ExecutionState from Win32_Process"
-if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-  $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
-  $Owner = @{N="User";E={(GetOwnerCim($_))}}
-} else {
-  $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
-  $Owner = @{N="User";E={(GetOwnerWmi($_))}}
-}
+if (ListProcsAndSvcs) {
+  CollectSystemInfoWMI
+  ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 
-if ($proc.count -gt 3) {
-  $proc | Sort-Object Name |
-  Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
-  @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
-  @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
-  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, @{N="State";E={($_.ExecutionState)}}, $StartTime, $Owner, CommandLine |
-  Out-String -Width 500 | Out-File -FilePath ($global:resDir + "\processes.txt")
+  Write-Log "Collecting the list of installed hotfixes"
+  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
 
-  Write-Log "Retrieving file version of running binaries"
-  $binlist = $proc | Group-Object -Property ExecutablePath
-  foreach ($file in $binlist) {
-    if ($file.Name) {
-      FileVersion -Filepath ($file.name) -Log $true
+  Write-Log "Collecing GPResult output"
+  $cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
+  write-log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+  $cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+  Write-Log "COM Security"
+  $Reg = [WMIClass]"\\.\root\default:StdRegProv"
+  $DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
+  $DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
+  $DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
+  $DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
+
+  # Convert the current permissions to SDDL
+  $converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
+  "Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
+  "Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
+  "Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
+  "Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
+
+  Write-Log "Collecting details of provider hosts"
+  New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
+
+  "Coupled providers (WMIPrvSE.exe processes)" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+  "" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+
+  $totMem = 0
+  $prov = ExecQuery -NameSpace "root\cimv2" -Query "select HostProcessIdentifier, Provider, Namespace, User from MSFT_Providers"
+  if ($prov) {
+    $proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate, KernelModeTime, UserModeTime from Win32_Process where name = 'wmiprvse.exe'"
+    foreach ($prv in $proc) {
+      $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
+
+      if (($provhost | Measure-Object).count -gt 0) {
+        if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+          $ut = New-TimeSpan -Start $prv.CreationDate
+        } else {
+          $ut = New-TimeSpan -Start $prv.ConvertToDateTime($prv.CreationDate)
+        }
+
+        $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+
+        $ks = $prv.KernelModeTime / 10000000
+        $kt = [timespan]::fromseconds($ks)
+        $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
+
+        $us = $prv.UserModeTime / 10000000
+        $ut = [timespan]::fromseconds($us)
+        $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
+
+        "PID" + " " + $prv.ProcessId + " (" + [String]::Format("{0:x}", $prv.ProcessId) + ") Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " KernelTime:" + $kh + " UserTime:" + $uh + " Uptime:" + $uptime + " " + (Get-ProcBitness($prv.ProcessId)) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+        $totMem = $totMem + $prv.PrivatePageCount
+      } else {
+        Write-Log ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
+      }
+
+      foreach ($provname in $provhost) {
+        $provdet = ExecQuery -NameSpace $provname.Namespace -Query ("select * from __Win32Provider where Name = """ + $provname.Provider + """")
+        $hm = $provdet.hostingmodel
+        $clsid = $provdet.CLSID
+        $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)' 2>>$global:errfile
+        $dll = $dll.Replace("""","")
+        $file = Get-Item ($dll)
+        $dtDLL = $file.CreationTime
+        $verDLL = $file.VersionInfo.FileVersion
+
+        $provname.Namespace + " " + $provname.Provider + " " + $dll + " " + $hm + " " + $provname.user + " " + $dtDLL + " " + $verDLL 2>>$global:errfile | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+      }
+      " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+    }
+  }
+  "Total memory used by coupled providers: " + ($totMem/1kb) + " KB" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+  " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+
+  # Details of decoupled providers
+  $list = Get-Process
+  foreach ($proc in $list) {
+    $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
+    if (($prov | measure).count -gt 0) {
+      if (-not $hdr) {
+        "Decoupled providers" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+        " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+        $hdr = $true
+      }
+
+      $prc = ExecQuery -Namespace "root\cimv2" -Query ("select ProcessId, CreationDate, HandleCount, ThreadCount, PrivatePageCount, ExecutablePath, KernelModeTime, UserModeTime from Win32_Process where ProcessId = " +  $proc.id)
+      if ($PSVersionTable.psversion.ToString() -ge "3.0") {
+        $ut= New-TimeSpan -Start $prc.CreationDate
+      } else {
+        $ut= New-TimeSpan -Start $prc.ConvertToDateTime($prc.CreationDate)
+      }
+
+      $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
+
+      $ks = $prc.KernelModeTime / 10000000
+      $kt = [timespan]::fromseconds($ks)
+      $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
+
+      $us = $prc.UserModeTime / 10000000
+      $ut = [timespan]::fromseconds($us)
+      $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
+
+      $svc = ExecQuery -Namespace "root\cimv2" -Query ("select Name from Win32_Service where ProcessId = " +  $prc.ProcessId)
+      $svclist = ""
+      if ($svc) {
+        foreach ($item in $svc) {
+          $svclist = $svclist + $item.name + " "
+        }
+        $svc = " Service: " + $svclist
+      } else {
+        $svc = ""
+      }
+
+      ($prc.ExecutablePath + $svc) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+      "PID " + $prc.ProcessId  + " (" + [String]::Format("{0:x}", $prc.ProcessId) + ")  Handles: " + $prc.HandleCount + " Threads: " + $prc.ThreadCount + " Private KB: " + ($prc.PrivatePageCount/1kb) + " KernelTime:" + $kh + " UserTime:" + $uh + " Uptime:" + $uptime + " " + (Get-ProcBitness($prv.ProcessId)) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+
+      $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
+      $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
+      ForEach ($key in $Items) {
+        if ($key.ProcessIdentifier -eq $prc.ProcessId) {
+          ($key.Scope + " " + $key.Provider) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
+        }
+      }
+      " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
     }
   }
 
-  Write-Log "Collecting services details"
-  $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
-
-  if ($svc) {
-    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
-    Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
+  Write-Log "Collecting quota details"
+  $quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
+  if ($quota) {
+    ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
+    ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
+    ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
+    ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
+    ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($global:resDir + "\ProviderHostQuotaConfiguration.txt")
   }
-  CollectSystemInfoWMI
-  ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
+
+  ExecQuery -Namespace "root\subscription" -Query "select * from ActiveScriptEventConsumer" | Export-Clixml -Path ($subDir + "\ActiveScriptEventConsumer.xml")
+  ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter" | Export-Clixml -Path ($subDir + "\__eventfilter.xml")
+  ExecQuery -Namespace "root\subscription" -Query "select * from __IntervalTimerInstruction" | Export-Clixml -Path ($subDir + "\__IntervalTimerInstruction.xml")
+  ExecQuery -Namespace "root\subscription" -Query "select * from __AbsoluteTimerInstruction" | Export-Clixml -Path ($subDir + "\__AbsoluteTimerInstruction.xml")
+  ExecQuery -Namespace "root\subscription" -Query "select * from __FilterToConsumerBinding" | Export-Clixml -Path ($subDir + "\__FilterToConsumerBinding.xml")
+
+  Write-Log "Exporting driverquery /v output"
+  $cmd = "driverquery /v >""" + $global:resDir + "\drivers.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 } else {
+  Write-Log "WMI is not working"
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
   @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
@@ -279,152 +403,4 @@ if ($proc.count -gt 3) {
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
   CollectSystemInfoNoWMI
-  Write-Log "Exiting since WMI is not working"
-  exit
 }
-
-Write-Log "COM Security"
-$Reg = [WMIClass]"\\.\root\default:StdRegProv"
-$DCOMMachineLaunchRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineLaunchRestriction").uValue
-$DCOMMachineAccessRestriction = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","MachineAccessRestriction").uValue
-$DCOMDefaultLaunchPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultLaunchPermission").uValue
-$DCOMDefaultAccessPermission = $Reg.GetBinaryValue(2147483650,"software\microsoft\ole","DefaultAccessPermission").uValue
-
-# Convert the current permissions to SDDL
-$converter = new-object system.management.ManagementClass Win32_SecurityDescriptorHelper
-"Default Access Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultAccessPermission)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
-"Default Launch Permission = " + ($converter.BinarySDToSDDL($DCOMDefaultLaunchPermission)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
-"Machine Access Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineAccessRestriction)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
-"Machine Launch Restriction = " + ($converter.BinarySDToSDDL($DCOMMachineLaunchRestriction)).SDDL | Out-File -FilePath ($global:resDir + "\COMSecurity.txt") -Append
-
-Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
-
-Write-Log "Collecting details of provider hosts"
-New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
-
-"Coupled providers (WMIPrvSE.exe processes)" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-"" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-
-$totMem = 0
-
-$prov = ExecQuery -NameSpace "root\cimv2" -Query "select HostProcessIdentifier, Provider, Namespace, User from MSFT_Providers"
-if ($prov) {
-  $proc = ExecQuery -NameSpace "root\cimv2" -Query "select ProcessId, HandleCount, ThreadCount, PrivatePageCount, CreationDate, KernelModeTime, UserModeTime from Win32_Process where name = 'wmiprvse.exe'"
-  foreach ($prv in $proc) {
-    $provhost = $prov | Where-Object {$_.HostProcessIdentifier -eq $prv.ProcessId}
-
-    if (($provhost | Measure-Object).count -gt 0) {
-      if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-        $ut = New-TimeSpan -Start $prv.CreationDate
-      } else {
-        $ut = New-TimeSpan -Start $prv.ConvertToDateTime($prv.CreationDate)
-      }
-
-      $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
-
-      $ks = $prv.KernelModeTime / 10000000
-      $kt = [timespan]::fromseconds($ks)
-      $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
-
-      $us = $prv.UserModeTime / 10000000
-      $ut = [timespan]::fromseconds($us)
-      $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
-
-      "PID" + " " + $prv.ProcessId + " (" + [String]::Format("{0:x}", $prv.ProcessId) + ") Handles:" + $prv.HandleCount +" Threads:" + $prv.ThreadCount + " Private KB:" + ($prv.PrivatePageCount/1kb) + " KernelTime:" + $kh + " UserTime:" + $uh + " Uptime:" + $uptime + " " + (Get-ProcBitness($prv.ProcessId)) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-      $totMem = $totMem + $prv.PrivatePageCount
-    } else {
-      Write-Log ("No provider found for the WMIPrvSE process with PID " +  $prv.ProcessId)
-    }
-
-    foreach ($provname in $provhost) {
-      $provdet = ExecQuery -NameSpace $provname.Namespace -Query ("select * from __Win32Provider where Name = """ + $provname.Provider + """")
-      $hm = $provdet.hostingmodel
-      $clsid = $provdet.CLSID
-      $dll = (get-itemproperty -ErrorAction SilentlyContinue -literalpath ("HKCR:\CLSID\" + $clsid + "\InprocServer32")).'(default)' 2>>$global:errfile
-      $dll = $dll.Replace("""","")
-      $file = Get-Item ($dll)
-      $dtDLL = $file.CreationTime
-      $verDLL = $file.VersionInfo.FileVersion
-
-      $provname.Namespace + " " + $provname.Provider + " " + $dll + " " + $hm + " " + $provname.user + " " + $dtDLL + " " + $verDLL 2>>$global:errfile | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-    }
-    " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-  }
-}
-"Total memory used by coupled providers: " + ($totMem/1kb) + " KB" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-" " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-
-# Details of decoupled providers
-$list = Get-Process
-foreach ($proc in $list) {
-  $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
-  if (($prov | measure).count -gt 0) {
-    if (-not $hdr) {
-      "Decoupled providers" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-      " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-      $hdr = $true
-    }
-
-    $prc = ExecQuery -Namespace "root\cimv2" -Query ("select ProcessId, CreationDate, HandleCount, ThreadCount, PrivatePageCount, ExecutablePath, KernelModeTime, UserModeTime from Win32_Process where ProcessId = " +  $proc.id)
-    if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-      $ut= New-TimeSpan -Start $prc.CreationDate
-    } else {
-      $ut= New-TimeSpan -Start $prc.ConvertToDateTime($prc.CreationDate)
-    }
-
-    $uptime = ($ut.Days.ToString() + "d " + $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00"))
-
-    $ks = $prc.KernelModeTime / 10000000
-    $kt = [timespan]::fromseconds($ks)
-    $kh = $kt.Hours.ToString("00") + ":" + $kt.Minutes.ToString("00") + ":" + $kt.Seconds.ToString("00")
-
-    $us = $prc.UserModeTime / 10000000
-    $ut = [timespan]::fromseconds($us)
-    $uh = $ut.Hours.ToString("00") + ":" + $ut.Minutes.ToString("00") + ":" + $ut.Seconds.ToString("00")
-
-    $svc = ExecQuery -Namespace "root\cimv2" -Query ("select Name from Win32_Service where ProcessId = " +  $prc.ProcessId)
-    $svclist = ""
-    if ($svc) {
-      foreach ($item in $svc) {
-        $svclist = $svclist + $item.name + " "
-      }
-      $svc = " Service: " + $svclist
-    } else {
-      $svc = ""
-    }
-
-    ($prc.ExecutablePath + $svc) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-    "PID " + $prc.ProcessId  + " (" + [String]::Format("{0:x}", $prc.ProcessId) + ")  Handles: " + $prc.HandleCount + " Threads: " + $prc.ThreadCount + " Private KB: " + ($prc.PrivatePageCount/1kb) + " KernelTime:" + $kh + " UserTime:" + $uh + " Uptime:" + $uptime + " " + (Get-ProcBitness($prv.ProcessId)) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-
-    $Keys = Get-ChildItem HKLM:\SOFTWARE\Microsoft\Wbem\Transports\Decoupled\Client
-    $Items = $Keys | Foreach-Object {Get-ItemProperty $_.PsPath }
-    ForEach ($key in $Items) {
-      if ($key.ProcessIdentifier -eq $prc.ProcessId) {
-        ($key.Scope + " " + $key.Provider) | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-      }
-    }
-    " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
-  }
-}
-
-Write-Log "Collecting quota details"
-$quota = ExecQuery -Namespace "Root" -Query "select * from __ProviderHostQuotaConfiguration"
-if ($quota) {
-  ("ThreadsPerHost : " + $quota.ThreadsPerHost + "`r`n") + `
-  ("HandlesPerHost : " + $quota.HandlesPerHost + "`r`n") + `
-  ("ProcessLimitAllHosts : " + $quota.ProcessLimitAllHosts + "`r`n") + `
-  ("MemoryPerHost : " + $quota.MemoryPerHost + "`r`n") + `
-  ("MemoryAllHosts : " + $quota.MemoryAllHosts + "`r`n") | Out-File -FilePath ($global:resDir + "\ProviderHostQuotaConfiguration.txt")
-}
-
-ExecQuery -Namespace "root\subscription" -Query "select * from ActiveScriptEventConsumer" | Export-Clixml -Path ($subDir + "\ActiveScriptEventConsumer.xml")
-ExecQuery -Namespace "root\subscription" -Query "select * from __eventfilter" | Export-Clixml -Path ($subDir + "\__eventfilter.xml")
-ExecQuery -Namespace "root\subscription" -Query "select * from __IntervalTimerInstruction" | Export-Clixml -Path ($subDir + "\__IntervalTimerInstruction.xml")
-ExecQuery -Namespace "root\subscription" -Query "select * from __AbsoluteTimerInstruction" | Export-Clixml -Path ($subDir + "\__AbsoluteTimerInstruction.xml")
-ExecQuery -Namespace "root\subscription" -Query "select * from __FilterToConsumerBinding" | Export-Clixml -Path ($subDir + "\__FilterToConsumerBinding.xml")
-
-Write-Log "Exporting driverquery /v output"
-$cmd = "driverquery /v >""" + $global:resDir + "\drivers.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append

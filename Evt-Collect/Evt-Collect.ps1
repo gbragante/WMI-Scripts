@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211126)"
+$version = "Evt-Collect (20211228)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -196,42 +196,28 @@ Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 ExpRegFeatureManagement
 
 Write-Log "Collecting details about running processes"
-$proc = ExecQuery -Namespace "root\cimv2" -Query "select Name, CreationDate, ProcessId, ParentProcessId, WorkingSetSize, UserModeTime, KernelModeTime, ThreadCount, HandleCount, CommandLine, ExecutablePath from Win32_Process"
-if ($PSVersionTable.psversion.ToString() -ge "3.0") {
-  $StartTime= @{e={$_.CreationDate.ToString("yyyyMMdd HH:mm:ss")};n="Start time"}
-  $Owner = @{N="User";E={(GetOwnerCim($_))}}
-} else {
-  $StartTime= @{n='StartTime';e={$_.ConvertToDateTime($_.CreationDate)}}
-  $Owner = @{N="User";E={(GetOwnerWmi($_))}}
-}
-
-if ($proc) {
-  $proc | Sort-Object Name |
-  Format-Table -AutoSize -property @{e={$_.ProcessId};Label="PID"}, @{e={$_.ParentProcessId};n="Parent"}, Name,
-  @{N="WorkingSet";E={"{0:N0}" -f ($_.WorkingSetSize/1kb)};a="right"},
-  @{e={[DateTime]::FromFileTimeUtc($_.UserModeTime).ToString("HH:mm:ss")};n="UserTime"}, @{e={[DateTime]::FromFileTimeUtc($_.KernelModeTime).ToString("HH:mm:ss")};n="KernelTime"},
-  @{N="Threads";E={$_.ThreadCount}}, @{N="Handles";E={($_.HandleCount)}}, $StartTime, $Owner, CommandLine |
-  Out-String -Width 500 | Out-File -FilePath ($global:resDir + "\processes.txt")
-
-  Write-Log "Retrieving file version of running binaries"
-  $binlist = $proc | Group-Object -Property ExecutablePath
-  foreach ($file in $binlist) {
-    if ($file.Name) {
-      FileVersion -Filepath ($file.name) -Log $true
-    }
-  }
-
-  Write-Log "Collecting services details"
-  $svc = ExecQuery -NameSpace "root\cimv2" -Query "select  ProcessId, DisplayName, StartMode,State, Name, PathName, StartName from Win32_Service"
-
-  if ($svc) {
-    $svc | Sort-Object DisplayName | Format-Table -AutoSize -Property ProcessId, DisplayName, StartMode,State, Name, PathName, StartName |
-    Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\services.txt")
-  }
-
+if (ListProcsAndSvcs) {
   CollectSystemInfoWMI
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
+
+  Write-Log "Collecting the list of installed hotfixes"
+  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
+
+  Write-Log "Collecing GPResult output"
+  $cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
+  write-log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+  $cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+  Write-Log "Exporting driverquery /v output"
+  $cmd = "driverquery /v >""" + $global:resDir + "\drivers.txt""" + $RdrErr
+  Write-Log $cmd
+  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 } else {
+  Write-Log "WMI is not working"
   $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
   $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
   @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
@@ -239,13 +225,5 @@ if ($proc) {
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
   CollectSystemInfoNoWMI
-  Write-Log "Exiting since WMI is not working"
 }
 
-Write-Log "Collecting the list of installed hotfixes"
-Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn -ErrorAction SilentlyContinue | Out-File $global:resDir\hotfixes.txt
-
-Write-Log "Exporting driverquery /v output"
-$cmd = "driverquery /v >""" + $global:resDir + "\drivers.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
