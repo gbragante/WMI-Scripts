@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211228)"
+$version = "Evt-Collect (20211229)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -73,15 +73,6 @@ if ($pidEventLog) {
 }
 
 Invoke-CustomCommand -Command "ipconfig /all" -DestinationFile "ipconfig.txt"
-
-Write-Log "Collecing GPResult output"
-$cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
-write-log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
-
-$cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Collecing Auditpol output"
 $cmd = "auditpol /get /category:* > """ + $global:resDir + "\auditpol.txt""" + $RdrErr
