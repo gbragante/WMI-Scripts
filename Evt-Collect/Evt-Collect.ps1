@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "Evt-Collect (20211229)"
+$version = "Evt-Collect (20211230)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function EvtLogDetails {
@@ -83,7 +83,7 @@ Write-Log "Checking lost events for each EventLog etw session"
 ("EventLog-Application : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-Application)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($global:resDir + "\EventsLost.txt") -Append
 ("EventLog-System : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-System)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($global:resDir + "\EventsLost.txt") -Append
 ("EventLog-Security : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-Security)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($global:resDir + "\EventsLost.txt") -Append
-if (Get-AutologgerConfig "EventLog-ForwardedEvents" -ErrorAction SilentlyContinue) {
+if ([System.Diagnostics.EventLog]::Exists("EventLog-ForwardedEvents")) {
   ("EventLog-ForwardedEvents : " + (Get-Counter -Counter "\Event Tracing for Windows Session(EventLog-ForwardedEvents)\Events Lost").CounterSamples[0].CookedValue) | Out-File -FilePath ($global:resDir + "\EventsLost.txt") -Append
 }
 
