@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20211228)"
+$version = "DSC-Collect (20211230)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -206,59 +206,15 @@ $cmd = "ipconfig /all >""" + $global:resDir + "\ipconfig.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
-Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "Application"
-
-Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "System"
-
-Write-Log "Exporting WMI-Activity/Operational log"
-$cmd = "wevtutil epl Microsoft-Windows-WMI-Activity/Operational """+ $global:resDir + "\" + $env:computername + "-WMI-Activity.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "WMI-Activity"
-
-Write-Log "Exporting DSC log"
-$cmd = "wevtutil epl Microsoft-Windows-DSC/Operational """+ $global:resDir + "\" + $env:computername + "-DSC.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "DSC"
-
-Write-Log "Exporting DSC PullServer log"
-$cmd = "wevtutil epl Microsoft-Windows-Powershell-DesiredStateConfiguration-PullServer/Operational """+ $global:resDir + "\" + $env:computername + "-PullServer.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "PullServer"Write-Log "Exporting DSC PullServer log"
-
-Write-Log "Exporting DSC FileDownloadManager log"
-$cmd = "wevtutil epl Microsoft-Windows-PowerShell-DesiredStateConfiguration-FileDownloadManager/Operational """+ $global:resDir + "\" + $env:computername + "-FileDownloadManager.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "FileDownloadManager"
-
-Write-Log "Exporting ManagementOdataService log"
-$cmd = "wevtutil epl Microsoft-Windows-ManagementOdataService/Operational """+ $global:resDir + "\" + $env:computername + "-ManagementOdataService.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "ManagementOdataService"
-
-Write-Log "Exporting PowerShell log"
-$cmd = "wevtutil epl Microsoft-Windows-PowerShell/Operational """+ $global:resDir + "\" + $env:computername + "-PowerShell.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "PowerShell"
-
-Write-Log "Exporting Windows Remote Management log"
-$cmd = "wevtutil epl Microsoft-Windows-WinRM/Operational """+ $global:resDir + "\" + $env:computername + "-WindowsRemoteManagement.evtx""" + $RdrOut + $RdrErr
-Write-Log $cmd
-Invoke-Expression $cmd
-ArchiveLog "WindowsRemoteManagement"
+Export-EventLog "Application"
+Export-EventLog "System"
+Export-EventLog "Microsoft-Windows-WMI-Activity/Operational"
+Export-EventLog "Microsoft-Windows-DSC/Operational"
+Export-EventLog "Microsoft-Windows-Powershell-DesiredStateConfiguration-PullServer/Operational"
+Export-EventLog "Microsoft-Windows-PowerShell-DesiredStateConfiguration-FileDownloadManager/Operational"
+Export-EventLog "Microsoft-Windows-ManagementOdataService/Operational"
+Export-EventLog "Microsoft-Windows-PowerShell/Operational"
+Export-EventLog "Microsoft-Windows-WinRM/Operational"
 
 Write-Log "WinHTTP proxy configuration"
 $cmd = "netsh winhttp show proxy >""" + $global:resDir + "\WinHTTP-Proxy.txt""" + $RdrErr
