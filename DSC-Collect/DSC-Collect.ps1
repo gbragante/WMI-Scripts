@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20211230)"
+$version = "DSC-Collect (20211231)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()

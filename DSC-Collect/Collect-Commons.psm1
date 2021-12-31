@@ -1,4 +1,4 @@
-# Collect-Commons 20211230
+# Collect-Commons 20211231
 
 Function Write-Log {
   param( [string] $msg )
@@ -700,11 +700,12 @@ function Export-EventLog {
   param (
     [string]$LogName
   )
-  
-  $cmd = "wevtutil epl ${LogName} """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
-  Write-Log $cmd
-  Invoke-Expression $cmd
-  ArchiveLog ($LogName -replace '/', '_')
+  if (Get-WinEvent -ListLog $LogName -ErrorAction SilentlyContinue) {
+    $cmd = "wevtutil epl ${LogName} """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
+    Write-Log $cmd
+    Invoke-Expression $cmd
+    ArchiveLog ($LogName -replace '/', '_')
+  }
 } 
 
 function Invoke-CustomCommand {
