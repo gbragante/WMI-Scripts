@@ -701,7 +701,7 @@ function Export-EventLog {
     [string]$LogName
   )
   if (Get-WinEvent -ListLog $LogName -ErrorAction SilentlyContinue) {
-    $cmd = "wevtutil epl ${LogName} """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
+    $cmd = "wevtutil epl ""${LogName}"" """ + $resDir + "\" + $env:computername + "-$($LogName -replace '/','_').evtx""" + $global:RdrOut + $global:RdrErr
     Write-Log $cmd
     Invoke-Expression $cmd
     ArchiveLog ($LogName -replace '/', '_')
