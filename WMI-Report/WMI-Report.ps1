@@ -1,5 +1,7 @@
-# WMI-Report (20210622)
+# WMI-Report (20220202)
 # by Gianni Bragante gbrag@microsoft.com
+
+param( [string]$DataPath, [switch]$AcceptEula )
 
 Function Get-WMINamespace($ns) {
   Write-Host $ns
@@ -326,17 +328,35 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
   exit
 }
 
-$Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
+$global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
 
 $resName = "WMI-Report-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
-$resDir = $Root + "\" + $resName
+$global:resDir = $global:Root + "\" + $resName
 
-New-Item -itemtype directory -path $resDir | Out-Null
-$eulaAccepted = ShowEULAIfNeeded "WMI-Report" 0
-if($eulaAccepted -ne "Yes") {
-  Write-Host  "EULA declined, exiting"
-  exit
+if ($AcceptEula) {
+  Write-Host "AcceptEula switch specified, silently continuing"
+  $eulaAccepted = ShowEULAIfNeeded "WMI-Report" 2
+} else {
+  $eulaAccepted = ShowEULAIfNeeded "WMI-Report" 0
+  if($eulaAccepted -ne "Yes")
+  {
+    Write-Host "EULA declined, exiting"
+    exit
+  }
 }
+Write-Host "EULA accepted, continuing"
+
+if ($DataPath) {
+  if (-not (Test-Path $DataPath)) {
+    Write-Host "The folder $DataPath does not exist"
+    exit
+  }
+  $global:resDir = $DataPath
+} else {
+  $global:resDir = $global:Root + "\" + $resName
+}
+
+New-Item -itemtype directory -path $global:resDir | Out-Null
 
 New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR | Out-Null
 
@@ -386,10 +406,10 @@ $tbSec.Columns.Add($col)
 Get-WMINamespace "Root"
 
 Write-Host "Writing Providers.csv"
-$tbProv | Export-Csv $resDir"\Providers.csv" -noType
+$tbProv | Export-Csv $global:resDir"\Providers.csv" -noType
 Write-Host "Writing Classes.csv"
-$tbDyn | Export-Csv $resDir"\Dynamic.csv" -noType
+$tbDyn | Export-Csv $global:resDir"\Dynamic.csv" -noType
 Write-Host "Writing Repository.csv"
-$tbStatic | Export-Csv $resDir"\Static.csv" -noType
+$tbStatic | Export-Csv $global:resDir"\Static.csv" -noType
 Write-Host "Writing Security.csv"
-$tbSec | Export-Csv $resDir"\Security.csv" -noType
+$tbSec | Export-Csv $global:resDir"\Security.csv" -noType
