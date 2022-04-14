@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20220311)"
+$version = "DSC-Collect (20220413)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetStore($store) {
@@ -286,6 +286,7 @@ Export-EventLog "Application"
 Export-EventLog "System"
 Export-EventLog "Microsoft-Windows-WMI-Activity/Operational"
 Export-EventLog "Microsoft-Windows-DSC/Operational"
+Export-EventLog "Microsoft-Windows-CAPI2/Operational"
 Export-EventLog "Microsoft-Windows-Powershell-DesiredStateConfiguration-PullServer/Operational"
 Export-EventLog "Microsoft-Windows-PowerShell-DesiredStateConfiguration-FileDownloadManager/Operational"
 Export-EventLog "Microsoft-Windows-ManagementOdataService/Operational"
