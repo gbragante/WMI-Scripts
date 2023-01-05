@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20211228)"
+$version = "WMI-Collect (20230105)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -172,6 +172,9 @@ Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem"
 $cmd = "reg export HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Wbem """+ $global:resDir + "\wbem.reg.txt"" /y >>""" + $outfile + """ 2>>""" + $global:errfile + """"
 Invoke-Expression $cmd
 
+# SCCM automatic remediation exclusion, see https://learn.microsoft.com/en-us/mem/configmgr/core/clients/deploy/configure-client-status#automatic-remediation-exclusion
+Export-RegistryKey -KeyPath "HKLM:\Software\Microsoft\CCM\CcmEval" -DestinationFile "CCMEval.txt"
+
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
@@ -192,7 +195,7 @@ ArchiveLog "WMI-Activity"
 
 if ($PSVersionTable.psversion.ToString() -ge "3.0") {
   $actLog = Get-WinEvent -logname Microsoft-Windows-WMI-Activity/Operational -Oldest -ErrorAction Continue 2>>$global:errfile
-  if (($actLog  | measure).count -gt 0) {
+  if (($actLog  | Measure-Object).count -gt 0) {
     Write-Log "Exporting WMI-Activity log"
     $actLog | Out-String -width 1000 | Out-File -FilePath ($global:resDir + "\WMI-Activity.txt")
   }

@@ -1,4 +1,4 @@
-# Collect-Commons 20211231
+# Collect-Commons 20230105
 
 Function Write-Log {
   param( [string] $msg )
@@ -111,7 +111,9 @@ Function Win10Ver {
   } elseif ($build -eq 20348) {
     return " (21H1 / fe)"  
   } elseif ($build -eq 22000) {
-    return " (21H2 / co)"  
+    return " (21H2 / co / sv)"  
+  } elseif ($build -eq 22621) {
+    return " (22H2 / sv2)"  
   }
 }
 
