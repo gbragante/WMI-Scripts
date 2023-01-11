@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20230105)"
+$version = "WMI-Collect (20230111)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetOwnerCim{
@@ -174,6 +174,11 @@ Invoke-Expression $cmd
 
 # SCCM automatic remediation exclusion, see https://learn.microsoft.com/en-us/mem/configmgr/core/clients/deploy/configure-client-status#automatic-remediation-exclusion
 Export-RegistryKey -KeyPath "HKLM:\Software\Microsoft\CCM\CcmEval" -DestinationFile "CCMEval.txt"
+
+Write-Log "Getting the output of WHOAMI /all"
+$cmd = "WHOAMI /all >>""" + $global:resDir + "\WHOAMI.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $global:errfile + """"
