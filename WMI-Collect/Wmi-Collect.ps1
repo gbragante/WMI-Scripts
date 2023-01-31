@@ -1,7 +1,10 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20230111)"
+$version = "WMI-Collect (20230131)"
 # by Gianni Bragante - gbrag@microsoft.com
+
+$DiagVersion = "WMI-RPC-DCOM-Diag (20230119)"
+# by Marius Porcolean maporcol@microsoft.com
 
 Function GetOwnerCim{
   param( $prc )
@@ -13,6 +16,46 @@ Function GetOwnerWmi{
   param( $prc )
   $ret = $prc.GetOwner()
   return ($ret.Domain + "\" + $ret.User)
+}
+
+Function Write-LogMessage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Message,
+
+        [Parameter()]
+        [ValidateSet('Error', 'Warning', 'Pass', 'Info')]
+        [string] $Type = $null
+    )
+    
+    $Color = $null
+    switch ($Type) {
+        "Error" {
+            $Message = (Get-Date).ToString("yyyyMMdd-HH:mm:ss.fff") + "    " + "[ERROR]   " + $Message
+            $Color = 'Magenta'
+        }
+        "Warning" {
+            $Message = (Get-Date).ToString("yyyyMMdd-HH:mm:ss.fff") + "    " + "[WARNING] " + $Message
+            $Color = 'Yellow'
+        }
+        "Pass" {
+            $Message = (Get-Date).ToString("yyyyMMdd-HH:mm:ss.fff") + "    " + "[PASS]    " + $Message
+            $Color = 'Green'
+        }
+        Default {
+            $Message = (Get-Date).ToString("yyyyMMdd-HH:mm:ss.fff") + "    " + "[INFO]    " + $Message
+        }
+    }
+    if ([string]::IsNullOrEmpty($Color)) {
+        Write-Host $Message
+    } 
+    else {
+        Write-Host $Message -ForegroundColor $Color
+    }
+    if (!($NoLogFile)) {
+        $Message | Out-File -FilePath $diagfile -Append
+    }
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -42,6 +85,7 @@ New-Item -itemtype directory -path $subDir | Out-Null
 
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
+$diagfile = $global:resDir + "\WMI-RPC-DCOM-Diag.txt"
 
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
@@ -411,4 +455,581 @@ if (ListProcsAndSvcs) {
   @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
   CollectSystemInfoNoWMI
+}
+
+Write-LogMessage ($DiagVersion)
+
+####################################################################################
+#################################### Diag start ####################################
+####################################################################################
+
+# Check OS version & get IPs
+$OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Version.Minor * 0.1
+if ($OSVer -gt 6.1) {
+
+    $versionRegKey = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    Write-LogMessage "Running on: $($versionRegKey.ProductName)"
+    Write-LogMessage "Current build number: $($versionRegKey.CurrentBuildNumber).$($versionRegKey.UBR)"
+    Write-LogMessage "Build details: $($versionRegKey.BuildLabEx)"
+
+    # TODO - try to determine when the last patch was installed...not the best option...
+    # tried getting the last write time of the build number in the registry, but that's not possible... 
+    # can only get a LastWriteTime for a regkey, not for a regvalue
+    # https://devblogs.microsoft.com/scripting/use-powershell-to-access-registry-last-modified-time-stamp/
+    $xmlQuery = @'
+    <QueryList>
+        <Query Id="0" Path="Setup">
+            <Select Path="Setup">*[System[(EventID=2)]][UserData[CbsPackageChangeState[(Client='UpdateAgentLCU' or Client='WindowsUpdateAgent') and (ErrorCode='0x0')]]]</Select>
+        </Query>
+    </QueryList>
+'@
+    $lastSuccessfulPatch = Get-WinEvent -MaxEvents 1 -FilterXml $xmlQuery  -ErrorAction SilentlyContinue
+    if ($lastSuccessfulPatch) {
+        if ($lastSuccessfulPatch.TimeCreated -le ((Get-Date).AddDays(-90))) {
+            Write-LogMessage -Type Warning "This device looks like it may not have been patched recently. Check current build number ($($versionRegKey.UBR)) vs the build number of the latest patches."
+        }
+        Write-LogMessage "The most recent successfully installed patch was $($lastSuccessfulPatch.Properties[0].Value), $(((Get-Date) - $lastSuccessfulPatch.TimeCreated).Days) days ago @ $($lastSuccessfulPatch.TimeCreated)."
+    }
+    else {
+        Write-LogMessage -Type Warning "Could not detect any successful patching events. Check current build number ($($versionRegKey.UBR)) vs the build number of the latest patches."
+    }
+
+    $psver = $PSVersionTable.PSVersion.Major.ToString() + $PSVersionTable.PSVersion.Minor.ToString()
+    if ($psver -lt "51") {
+        Write-LogMessage -Type Warning "Windows Management Framework version $($PSVersionTable.PSVersion.ToString()) is no longer supported"
+    }
+    else { 
+        Write-LogMessage "Windows Management Framework version is $($PSVersionTable.PSVersion.ToString())"
+    }
+    Write-LogMessage "Running PowerShell build $($PSVersionTable.BuildVersion.ToString())"
+
+    $iplist = Get-NetIPAddress
+    Write-LogMessage "IP addresses of this machine: $(foreach ($ip in $iplist) {$ip.ToString() +' |'})"
+}
+else {
+    Write-LogMessage -Type Warning "This is a legacy OS, please consider updating to a newer supported version."
+}
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking services..."
+
+# check WMI, RPCSS, DcomLaunch services
+$services = Get-Service EventSystem, COMSysApp, RPCSS, RpcEptMapper, DcomLaunch, Winmgmt
+if ($services) {
+    foreach ($service in $Services) {
+        $msg = "The '$($service.DisplayName)' service is $($service.Status)."
+        if ($service.Status -eq 'Running') {
+            Write-LogMessage -Type Pass $msg
+        }
+        else {
+            Write-LogMessage -Type Error $msg
+        }
+        if (($service.Name -eq 'COMSysApp') -and ($service.StartType -ne 'Manual')) {
+            Write-LogMessage -Type Warning "The service also does not have its default StartupType. Default: Manual. Current setting: $($service.StartType)."
+        }
+        elseif (($service.Name -ne 'COMSysApp') -and ($service.StartType -ne 'Automatic')) {
+            Write-LogMessage -Type Warning "The service also does not have its default StartupType. Default: Automatic. Current setting: $($service.StartType)."
+        }
+    }
+}
+else {
+    Write-LogMessage -Type Error "Could not check the status of the services, please look into this!"
+}   
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking COM+ settings..."
+
+# Check if COM+ is on
+$enableComPlus = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\COM3").'Com+Enabled'
+if ([string]::IsNullOrEmpty($enableComPlus)) {
+    Write-LogMessage -Type Warning "Could not check COM+, please check manually @ HKLM:\SOFTWARE\Microsoft\COM3."
+}
+else {
+    if ($enableComPlus -eq 1) {
+        Write-LogMessage -Type Pass "COM+ is enabled."
+    }
+    elseif ($enableComPlus -eq 0) {
+        Write-LogMessage -Type Error "COM+ is NOT enabled."
+    }
+}
+
+# Check if COM+ remote access is on
+$remoteComPlus = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\COM3").RemoteAccessEnabled
+if ([string]::IsNullOrEmpty($remoteComPlus)) {
+    Write-LogMessage -Type Warning "Could not check COM+ remote access, please check manually @ HKLM:\SOFTWARE\Microsoft\COM3."
+}
+else {
+    if ($remoteComPlus -eq 1) {
+        Write-LogMessage -Type Warning "COM+ remote access is enabled. By default it is off."
+    }
+    elseif ($remoteComPlus -eq 0) {
+        Write-LogMessage -Type Pass "COM+ remote access is not enabled. This is ok, by default it is off."
+    }
+}
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking RPC settings..."
+
+# Check if the Restrict Unauthenticated RPC clients policy is on or not
+$restrictRpcClients = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\Rpc" -ErrorAction SilentlyContinue).RestrictRemoteClients
+if ([string]::IsNullOrEmpty($restrictRpcClients)) {
+    Write-LogMessage -Type Pass "RPC restrictions via policy are not in place."
+}
+else {
+    switch ($restrictRpcClients) {
+        0 { Write-LogMessage "The RPC restriction policy is set to 'None', so all connections are allowed." }
+        1 { Write-LogMessage "The RPC restriction policy is set to 'Authenticated', so only Authenticated RPC Clients are allowed. Exemptions are granted to interfaces that have requested them." }
+        2 { Write-LogMessage -Type Warning "The RPC restriction policy is set to 'Authenticated without exceptions', so only Authenticated RPC Clients are allowed, with NO exceptions. This is known to cause on the client some very tricky to investigate 'access denied' errors." }
+        Default { Write-LogMessage -Type Error "The RPC restriction policy seems to be present, but its value seems to be wrong. It should be 0, 1 or 2, but is actually $($restrictRpcClients)." }
+    }
+}
+
+# Check internet settings for RPC to see if there's a restricted port range
+$rpcPortsRestriction = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Rpc\Internet" -ErrorAction SilentlyContinue).UseInternetPorts
+if (([string]::IsNullOrEmpty($rpcPortsRestriction)) -or ($rpcPortsRestriction -eq "N")) {
+    Write-LogMessage -Type Pass "RPC ports are not restricted."
+}
+elseif ($rpcPortsRestriction -eq "Y") {
+    $rpcPorts = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Rpc\Internet" -ErrorAction SilentlyContinue).Ports
+    Write-LogMessage -Type Warning "RPC ports are restricted. This may cause issues with RPC/DCOM connections. The usable port range is defined to '$($rpcPorts.ToString())'."
+}
+
+# Check actual dynamic port range
+$intSettings = Get-NetTCPSetting -SettingName Internet
+if ($null -eq $intSettings) {
+    Write-LogMessage -Type Warning "The Internet TCP dynamic port range could not be read, please have a close look."
+}
+elseif ($intSettings.DynamicPortRangeStartPort -eq 49152 -and $intSettings.DynamicPortRangeNumberOfPorts -eq 16384) {
+    Write-LogMessage -Type Pass "The Internet TCP dynamic port range is the default."
+}
+else {
+    Write-LogMessage -Type Warning "The Internet TCP dynamic port range is NOT the default, please have a closer look."
+}
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking DCOM settings..."
+
+# Check if DCOM is enabled 
+$ole = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole"
+if ($ole.EnableDCOM -eq "Y") {
+    Write-LogMessage -Type Pass "DCOM is enabled."
+}
+else {
+    Write-LogMessage -Type Error "DCOM is NOT enabled! Check the settings."
+}
+
+# Check default DCOM Launch & Activation / Access permissions
+$defaultPermissions = @(
+    @{
+        name   = 'Everyone'
+        short  = 'WD'
+        sid    = 'S-1-1-0'
+        launch = 'A;;CCDCSW;;;' 
+        access = 'A;;CCDCLC;;;'
+    }
+    @{
+        name   = 'Administrators'
+        short  = 'BA'
+        sid    = 'S-1-5-32-544'
+        launch = 'A;;CCDCLCSWRP;;;'
+    }
+    @{
+        name   = 'Distributed COM Users'
+        short  = 'CD'
+        sid    = 'S-1-5-32-562'
+        launch = 'A;;CCDCLCSWRP;;;'
+        access = 'A;;CCDCLC;;;'
+    }
+    @{
+        name   = 'Performance Log Users'
+        short  = 'LU'
+        sid    = 'S-1-5-32-559'
+        launch = 'A;;CCDCLCSWRP;;;'
+        access = 'A;;CCDCLC;;;'
+    }
+    @{
+        name   = 'All Application Packages'
+        short  = 'AC'
+        sid    = 'S-1-15-2-1'
+        launch = 'A;;CCDCSW;;;'
+        access = 'A;;CCDC;;;'
+    }
+)
+
+# Get current permissions from registry
+$launchRestriction = (([wmiclass]"Win32_SecurityDescriptorHelper").BinarySDToSDDL($ole.MachineLaunchRestriction)).SDDL
+$accessRestriction = (([wmiclass]"Win32_SecurityDescriptorHelper").BinarySDToSDDL($ole.MachineAccessRestriction)).SDDL
+
+# Compare current vs default permissions
+foreach ($permission in $defaultPermissions.GetEnumerator()) {
+    if ($permission.launch) {
+        if ($launchRestriction.Contains($permission.launch + $permission.short) -or $launchRestriction.Contains($permission.launch + $permission.sid)) {
+            Write-LogMessage -Type Pass "The '$($permission.name)' group is present in Launch & Activation with default permissions."
+        }
+        else {
+            Write-LogMessage -Type Error "The '$($permission.name)' group is NOT present in Launch & Activation with default permissions, please verify."
+        }
+    }
+
+    if ($permission.access) {
+        if ($accessRestriction.Contains($permission.access + $permission.short) -or $accessRestriction.Contains($permission.access + $permission.sid)) {
+            Write-LogMessage -Type Pass "The '$($permission.name)' group is present in Access with default permissions."
+        }
+        else {
+            Write-LogMessage -Type Error "The '$($permission.name)' group is NOT present in Access with default permissions, please verify."
+        }
+    }
+}
+
+# Check enabled DCOM protocols
+$protocols = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Rpc" -ErrorAction SilentlyContinue).'DCOM Protocols'
+if ([string]::IsNullOrEmpty($protocols)) {
+    Write-LogMessage -Type Warning "No protocols specified for DCOM."
+}
+else {
+    Write-LogMessage "Enabled protocols: $($protocols)"
+    if ($protocols.Contains("ncacn_ip_tcp")) {
+        Write-LogMessage -Type Pass "The list of enabled protocols contains 'ncacn_ip_tcp', which should be present by default."
+    }
+    else {
+        Write-LogMessage -Type Error "The list of enabled protocols does NOT contain 'ncacn_ip_tcp', which should be present by default."
+    }
+}
+
+# Check DcomScmRemoteCallFlags
+if ([string]::IsNullOrEmpty($ole.DCOMSCMRemoteCallFlags)) {
+    Write-LogMessage -Type Pass "DCOMSCMRemoteCallFlags is not configured in the registry and by default it should not be there. That is ok."
+}
+else {
+    Write-LogMessage -Type Warning "DCOMSCMRemoteCallFlags is configured in the registry with value '$($ole.DCOMSCMRemoteCallFlags)', while it should not be there by default. This does not necessarily mean there is a problem, nevertheless, please check the documentation:`nhttps://learn.microsoft.com/en-us/windows/win32/com/dcomscmremotecallflags"
+}
+
+# Check LegacyAuthenticationLevel
+if ([string]::IsNullOrEmpty($ole.LegacyAuthenticationLevel)) {
+    Write-LogMessage -Type Pass "LegacyAuthenticationLevel is not configured in the registry, so the default is used. That is ok."
+}
+else {
+    Write-LogMessage -Type Warning "LegacyAuthenticationLevel is configured in the registry with value '$($ole.LegacyAuthenticationLevel)', while it should not be there by default. This should not be a problem, though, as we are raising the authentication level in the OS anyway, due to the DCOM hardening. Nevertheless, please check the documentation:`nhttps://learn.microsoft.com/en-us/windows/win32/com/legacyauthenticationlevel"
+}
+
+# Check LegacyImpersonationLevel
+if ([string]::IsNullOrEmpty($ole.LegacyImpersonationLevel) -or ($ole.LegacyImpersonationLevel -eq 2)) {
+    Write-LogMessage -Type Pass "LegacyImpersonationLevel is using the default value. That is ok."
+}
+else {
+    Write-LogMessage -Type Warning "LegacyImpersonationLevel is configured in the registry with value '$($ole.LegacyImpersonationLevel)', while it should be '2' by default. Please check the documentation:`nhttps://learn.microsoft.com/en-us/windows/win32/com/legacyimpersonationlevel"
+}
+
+# Check DCOM hardening registry keys
+$requireIntegrityAuthLevel = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole\AppCompat" -ErrorAction SilentlyContinue).RequireIntegrityActivationAuthenticationLevel
+if ([string]::IsNullOrEmpty($requireIntegrityAuthLevel)) {
+    Write-LogMessage -Type Pass "RequireIntegrityActivationAuthenticationLevel is not set in the registry. That is ok."
+}
+else {
+    Write-LogMessage -Type Warning "RequireIntegrityActivationAuthenticationLevel is set in the registry to '$requireIntegrityAuthLevel'. Check info in public KB5004442.`nhttps://support.microsoft.com/en-us/topic/kb5004442-manage-changes-for-windows-dcom-server-security-feature-bypass-cve-2021-26414-f1400b52-c141-43d2-941e-37ed901c769c"
+}
+
+$raiseAuthLevel = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole\AppCompat" -ErrorAction SilentlyContinue).RaiseActivationAuthenticationLevel
+if ([string]::IsNullOrEmpty($raiseAuthLevel)) {
+    Write-LogMessage -Type Pass "RaiseActivationAuthenticationLevel is not set in the registry. That is ok."
+}
+else {
+    Write-LogMessage -Type Warning "RaiseActivationAuthenticationLevel is set in the registry to '$raiseAuthLevel'. Check info in public KB5004442.`nhttps://support.microsoft.com/en-us/topic/kb5004442-manage-changes-for-windows-dcom-server-security-feature-bypass-cve-2021-26414-f1400b52-c141-43d2-941e-37ed901c769c"
+}
+
+$disableHardeningLogging = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Ole\AppCompat" -ErrorAction SilentlyContinue).DisableAuthenticationLevelHardeningLog
+if ([string]::IsNullOrEmpty($disableHardeningLogging) -or ($disableHardeningLogging -eq 0)) {
+    Write-LogMessage -Type Pass "Hardening related logging is turned on. That is ok, it should be on by default."
+}
+else {
+    Write-LogMessage -Type Error "Hardening related logging is turned off. This is a problem, because you may have failing DCOM calls which you are not aware of. Please turn the logging back on by removing the DisableAuthenticationLevelHardeningLog entry from regkey 'HKLM:\SOFTWARE\Microsoft\Ole\AppCompat'."
+}
+
+# Check for any DCOM hardening events (IDs 10036/10037/10038)
+$sysEvents = Get-WinEvent -FilterHashtable @{
+    LogName = 'System'
+    ID      = 10036, 10037, 10038
+} -ErrorAction SilentlyContinue
+if (!$sysEvents) {
+    Write-LogMessage -Type Pass "Did not detect any DCOM hardening related events (10036, 10037, 10038) in the System log."
+}
+else {
+    if ($sysEvents.Id.Contains(10036)) {
+        Write-LogMessage -Type Warning "Events with ID 10036 detected in the System event log. This device seems to be acting as a DCOM server & is rejecting some incoming connections, please check."
+        
+        # Print the most recent 5 of them
+        Write-LogMessage "Here are the most recent ones:"
+        foreach ($event in ($sysEvents | Where-Object { $_.Id -eq 10036 } | Select-Object -First 5)) {
+            Write-LogMessage "$($event.TimeCreated) - $($event.Message)"
+        }
+    }
+    if ($sysEvents.Id.Contains(10037)) {
+        Write-LogMessage -Type Warning "Events with ID 10037 detected in the System event log. This device seems to be acting as a DCOM client with explicitly set auth level & failing, please check."
+          
+        # Print the most recent 5 of them
+        Write-LogMessage "Here are the most recent ones:"
+        foreach ($event in ($sysEvents | Where-Object { $_.Id -eq 10037 } | Select-Object -First 5)) {
+            Write-LogMessage "$($event.TimeCreated) - $($event.Message)"
+        }
+    }
+    if ($sysEvents.Id.Contains(10038)) {
+        Write-LogMessage -Type Warning "Events with ID 10038 detected in the System event log. This device seems to be acting as a DCOM client with default auth level & failing, please check."
+    
+        # Print the most recent 5 of them
+        Write-LogMessage "Here are the most recent ones:"
+        foreach ($event in ($sysEvents | Where-Object { $_.Id -eq 10038 } | Select-Object -First 5)) {
+            Write-LogMessage "$($event.TimeCreated) - $($event.Message)"
+        }
+    }
+}
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking WMI settings..."
+
+# Check WMI object permissions
+New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR -ErrorAction SilentlyContinue | Out-Null
+$comWmiObj = Get-ItemProperty -Path "HKCR:\AppID\{8BC3F05E-D86B-11D0-A075-00C04FB68820}" -ErrorAction SilentlyContinue
+if (!$comWmiObj) {
+    Write-LogMessage -Type Warning "Could not read the permissions for the WMI COM object, please check manually."
+}
+else {
+    $launchWmiPermission = (([wmiclass]"Win32_SecurityDescriptorHelper").BinarySDToSDDL($comWmiObj.LaunchPermission)).SDDL
+
+    $defaultWmiPermissions = @(
+        @{
+            name   = 'Administrators'
+            short  = 'BA'
+            sid    = 'S-1-5-32-544'
+            launch = 'A;;CCDCLCSWRP;;;'
+        }
+        @{
+            name   = 'Authenticated Users'
+            short  = 'AU'
+            sid    = 'S-1-5-11'
+            launch = 'A;;CCDCSWRP;;;'
+        }
+    )
+
+    foreach ($permission in $defaultWmiPermissions.GetEnumerator()) {
+        if ($launchWmiPermission.Contains($permission.launch + $permission.short) -or $launchWmiPermission.Contains($permission.launch + $permission.sid)) {
+            Write-LogMessage -Type Pass "The '$($permission.name)' group is present with default permissions."
+        }
+        else {
+            Write-LogMessage -Type Error "The '$($permission.name)' group is NOT present with default permissions, please verify."
+        }
+    }
+}
+
+# Check event logs for known WMI events in the last 30 days
+$cutoffDate = (Get-Date).AddDays(-30)
+$wmiProvEvents = Get-WinEvent -FilterHashtable @{
+    LogName   = 'Application'
+    ID        = 5612
+    StartTime = $cutoffDate
+} -ErrorAction SilentlyContinue
+if ($wmiProvEvents) {
+    Write-LogMessage -Type Warning "Detected $($wmiProvEvents.Count) events with ID 5612 detected in the Application event log in the last 30 days. This means that WmiPrvSE processes are exceeding some quota(s), please check."
+
+    # Print the most recent 5 of them
+    Write-LogMessage "Here are the most recent ones:"
+    foreach ($event in ($wmiProvEvents | Select-Object -First 5)) {
+        Write-LogMessage "$($event.TimeCreated) - $($event.Message)"
+    }
+}
+else {
+    Write-LogMessage -Type Pass "Did not detect any WMI Provider Host quota violation events in the Application log."
+}
+
+
+# Check for Corrupted.rec file
+$corruptionSign = Get-ItemProperty "$env:SystemRoot\System32\wbem\repository\Corrupted.rec" -ErrorAction SilentlyContinue
+if ($corruptionSign) {
+    Write-LogMessage -Type Warning "Found 'Corrupted.rec' file. This means that the WMI repository could have been corrupted at some point & was restored/reset @ '$($corruptionSign.CreationTimeUtc)'."
+    
+    # check SCCM client auto remediation setting
+    $ccmEval = Get-ItemProperty -Path "HKLM:\Software\Microsoft\CCM\CcmEval" -ErrorAction SilentlyContinue
+    if ($ccmEval) {
+        if ($ccmEval.NotifyOnly -eq 'TRUE') {
+            Write-LogMessage -Type Pass "SCCM client automatic remediation is turned OFF. This should prevent it from automatically resetting the WMI repository."
+        }
+        else {
+            Write-LogMessage -Type Warning "SCCM client automatic remediation is turned ON. This could be an explanation for the repository restore/reset. You can turn this OFF & see if the problem persists, check out this page `nhttps://learn.microsoft.com/en-us/mem/configmgr/core/clients/deploy/configure-client-status#automatic-remediation-exclusion"
+        }
+    }
+}
+else {
+    Write-LogMessage -Type Pass "Did not find a 'Corrupted.rec' file. This means that the WMI repository is probably healthy & was not restored/reset recently."
+}
+
+# Check repository file size
+$repoFile = Get-ItemProperty "$env:SystemRoot\System32\wbem\repository\OBJECTS.DATA" -ErrorAction SilentlyContinue
+if ($repoFile) {
+    $size = $repoFile.Length / 1024 / 1024
+    if ($size -lt 500) {
+        Write-LogMessage -Type Pass "The WMI repository file is smaller than 500 MB ($size MB). This seems healthy."
+    }
+    else {
+        if ($size -gt 1000) {
+            Write-LogMessage -Type Error "The WMI repository file is larger than 1 GB ($size MB). This may cause issues like slow boot/logon."
+        }
+        else {
+            Write-LogMessage -Type Warning "The WMI repository file is larger than 500 MB ($size MB). This may be a sign of repository bloating."
+        }
+
+        # check for RSOP logging reg key
+        $rsopLogging = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\System" -ErrorAction SilentlyContinue).RSoPLogging
+        if ($rsopLogging -and $rsopLogging -eq 0) {
+            Write-LogMessage -Type Pass "RSOP logging seems to be turned off, this is probably not why the repository is bloated."
+        }
+        else {
+            Write-LogMessage -Type Warning "RSOP logging is turned on and this may be why the repository is so big. You can turn off RSOP logging via policy or registry:`nhttps://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.GroupPolicy::RSoPLogging"
+        }
+    }
+}
+else {
+    Write-LogMessage -Type Warning "Could not get information about the WMI repository file."
+}
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking domain / workgroup settings..."
+
+# Check if machine is part of a domain or not
+if ((Get-CimInstance -ClassName Win32_ComputerSystem).PartOfDomain) {
+    Write-LogMessage "The machine is part of a domain."
+
+    # Check SPNs
+    $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
+    $SPN = "HTTP/" + $env:COMPUTERNAME
+    Write-LogMessage ("Searching for the SPN $SPN")
+    $search.filter = "(servicePrincipalName=$SPN)"
+    $results = $search.Findall()
+    if ($results.count -gt 0) {
+        foreach ($result in $results) {
+            Write-LogMessage "The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = $($result.properties.dnshostname), DN = $($result.properties.distinguishedname), Category = $($result.properties.objectcategory)"
+            if ($result.properties.objectcategory[0].Contains("Computer")) {
+                if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
+                    Write-LogMessage -Type Error "The SPN $SPN is registered for different DNS host name: $($result.properties.dnshostname[0])"
+                }
+                else {
+                    Write-LogMessage -Type Pass "The SPN $SPN seems to be correctly registered to the computer account."
+                }
+            }
+            else {
+                Write-LogMessage -Type Error "The SPN $SPN is NOT registered for a computer account."
+            }
+        }
+        if ($results.count -gt 1) {
+            Write-LogMessage -Type Error "The SPN $SPN is duplicate."
+        }
+    }
+    else {
+        Write-LogMessage -Type Pass "The SPN $SPN was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used."
+    }
+
+    
+    # TODO - more checks for domain joined machines
+
+
+}
+else {
+    Write-LogMessage -Type Warning "The machine is not joined to a domain."
+
+
+    # TODO - more checks for non-domain joined (WORKGROUP) machines
+
+}
+
+
+
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking networking settings..."
+
+# check default Firewall rules for WMI 
+$fwRules = Show-NetFirewallRule -PolicyStore ActiveStore | Where-Object { ($_.DisplayGroup -like '*WMI*') -and ($_.Direction -eq 'Inbound') }
+if ($fwRules) {
+    foreach ($rule in $fwRules) {
+        if ($rule.Enabled -eq 'True') {
+            Write-LogMessage -Type Pass "Firewall rule '$($rule.DisplayName) - Profile: $($rule.Profile)' is enabled."
+        }
+        else {
+            Write-LogMessage -Type Warning "Firewall rule '$($rule.DisplayName) - Profile: $($rule.Profile)' is not enabled."
+        }
+    }
+}
+else {
+    Write-LogMessage -Type Error "Could not find any relevant Firewall rules, please look into this, as it is not normal!"
+}
+
+
+# Check HTTP regkey
+$HttpParam = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -ErrorAction SilentlyContinue
+if ($HttpParam -and ($HttpParam.MaxFieldLength -gt 0) -and ($HttpParam.MaxRequestBytes -gt 0)) {
+    Write-LogMessage "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxFieldLength = $($HttpParam.MaxFieldLength)"
+    Write-LogMessage "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxRequestBytes = $($HttpParam.MaxRequestBytes)"
+}
+else {
+    Write-LogMessage -Type Warning "MaxFieldLength and/or MaxRequestBytes are not defined in HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters. This may cause the requests to fail with error 400 in complex AD environemnts. See KB 820129."
+}
+
+
+# Check IP listen filtering
+$iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -ErrorAction SilentlyContinue).ListenOnlyList
+if ($iplisten) {
+    Write-LogMessage -Type Warning "The IPLISTEN list is not empty, the listed addresses are $(foreach ($ip in $iplisten) {$ip.ToString() +' |'})."
+}
+else {
+    Write-LogMessage -Type Pass "The IPLISTEN list is empty. That's ok: we should listen on all IP addresses by default."
+}
+
+
+# Check winhttp proxy
+$binval = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\Connections" -ErrorAction SilentlyContinue).WinHttPSettings            
+$proxylength = $binval[12]            
+if ($proxylength -gt 0) {
+    $proxy = -join ($binval[(12 + 3 + 1)..(12 + 3 + 1 + $proxylength - 1)] | ForEach-Object { ([char]$_) })            
+    Write-LogMessage -Type Warning "A NETSH WINHTTP proxy is configured: $($proxy)"
+    $bypasslength = $binval[(12 + 3 + 1 + $proxylength)]            
+    if ($bypasslength -gt 0) {            
+        $bypasslist = -join ($binval[(12 + 3 + 1 + $proxylength + 3 + 1)..(12 + 3 + 1 + $proxylength + 3 + 1 + $bypasslength)] | ForEach-Object { ([char]$_) })            
+        Write-LogMessage -Type Warning "Bypass list: $($bypasslist)"
+    }
+    else {            
+        Write-LogMessage -Type Warning "No bypass list is configured"
+    }            
+    Write-LogMessage -Type Warning "Remote WMI over DCOM does not work very well through proxies, make sure that the target machine is in the bypass list or remove the proxy"
+}
+else {
+    Write-LogMessage -Type Pass "No NETSH WINHTTP proxy is configured"
+}
+
+
+# Check HTTPERR buildup
+$dir = $env:windir + "\system32\logfiles\HTTPERR"
+if (Test-Path -path $dir) {
+    $httperrfiles = Get-ChildItem -path ($dir)
+    $msg = "There are $($httperrfiles.Count) files in the folder $dir"
+    if ($httperrfiles.Count -gt 100) {
+        Write-LogMessage -Type Warning $msg
+    }
+    else {
+        Write-LogMessage $msg
+    }
+    $size = 0 
+    foreach ($file in $httperrfiles) {
+        $size += $file.Length
+    }
+    $size = [System.Math]::Ceiling($size / 1024 / 1024) # Convert to MB
+    $msg = "The folder $dir is using $($size.ToString()) MB of disk space."
+    if ($size -gt 100) {
+        Write-LogMessage -Type Warning $msg
+    }
+    else {
+        Write-LogMessage $msg
+    }
 }
