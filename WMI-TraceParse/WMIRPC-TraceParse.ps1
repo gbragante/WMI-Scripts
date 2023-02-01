@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20210820
+# WMIRPC-TraceParse - 20230201
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -142,12 +142,19 @@ Function Parse-Query {
   $row.CorrelationID = FindSep -FindIn $part -Left "CorrelationId = " -Right ";"
   $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
   $row.OperationID = FindSep -FindIn $part -Left " OperationId = " -Right ";"
-  $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
-  $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
-  $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
   $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
   $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
+
+  if ($part -match  "MethodName =") {
+    $row.Namespace = FindSep -FindIn $part -Left "NamespaceName = " -Right " {"
+    $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "ClassName= " -Right ";").ToLower()
+    $row.Operation = FindSep -FindIn $part -Left "MethodName = " -Right ";"
+  } else {
+    $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
+    $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
+    $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
+  }
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
