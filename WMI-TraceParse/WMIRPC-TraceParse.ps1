@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230201
+# WMIRPC-TraceParse - 20230202
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -234,8 +234,8 @@ if ($FileName -eq "") {
 
 $KFileName = ""
 $fileobj = Get-Item $FileName
-if ($fileobj.Basename.ToLower().Contains("wmi-trace")) {
-  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("wmi-trace-","wmi-trace-kernel-") + ".txt"
+if ($fileobj.Basename.ToLower().Contains("-trace")) {
+  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
 }
 
 if (-not (Test-Path ($FileName))) {
