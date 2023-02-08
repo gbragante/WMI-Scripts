@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "WMI-Collect (20230131)"
+$version = "WMI-Collect (20230208)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230119)"
@@ -74,7 +74,7 @@ if ($DataPath) {
     Write-Host "The folder $DataPath does not exist"
     exit
   }
-  $global:resDir = $DataPath
+  $global:resDir = $DataPath + "\" + $resName
 } else {
   $global:resDir = $global:Root + "\" + $resName
 }
@@ -377,7 +377,7 @@ if (ListProcsAndSvcs) {
   $list = Get-Process
   foreach ($proc in $list) {
     $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmidcprv.dll"} 
-    if (($prov | measure).count -gt 0) {
+    if (($prov | Measure-Object).count -gt 0) {
       if (-not $hdr) {
         "Decoupled providers" | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
         " " | Out-File -FilePath ($global:resDir + "\ProviderHosts.txt") -Append
