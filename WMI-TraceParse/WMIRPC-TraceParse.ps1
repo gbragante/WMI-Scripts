@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230202
+# WMIRPC-TraceParse - 20230220
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -57,7 +57,9 @@ Function FindSep {
 
 Function FindClass {
   param( [string] $InQuery, [string]$Quote)
+  $InQuery = $InQuery.Replace("\\.\", "")
   $FindClass = (FindSep -FindIn $InQuery -Left "from " -Right " ").Trim()
+
   if ($FindClass -eq "") {
      $FindClass = (FindSep -FindIn $InQuery -Left "from " -Right "").Trim()
      if ($FindClass -eq "") {
@@ -66,11 +68,14 @@ Function FindClass {
        } else {
          $FindClass = (FindSep -FindIn $InQuery -Left "" -Right " where")
          if ($FindClass -eq "") {
-           $FindClass = (FindSep -FindIn $InQuery -Left "" -Right ".")
+           $FindClass = (FindSep -FindIn $InQuery -Left ":" -Right ".")
            if ($FindClass -eq "") {
-             $FindClass = (FindSep -FindIn $InQuery -Left "" -Right "::")
+             $FindClass = (FindSep -FindIn $InQuery -Left "" -Right ".")
              if ($FindClass -eq "") {
-               $FindClass = $InQuery.Replace("'", $Quote)
+               $FindClass = (FindSep -FindIn $InQuery -Left "" -Right "::")
+               if ($FindClass -eq "") {
+                 $FindClass = $InQuery.Replace("'", $Quote)
+               }
              }
            }                        
          }
