@@ -1,9 +1,9 @@
-param( [string]$DataPath, [switch]$AcceptEula )
+param( [string]$DataPath, [switch]$AcceptEula, [switch]$Trace )
 
-$version = "WMI-Collect (20230208)"
+$version = "WMI-Collect (20230221)"
 # by Gianni Bragante - gbrag@microsoft.com
 
-$DiagVersion = "WMI-RPC-DCOM-Diag (20230119)"
+$DiagVersion = "WMI-RPC-DCOM-Diag (20230215)"
 # by Marius Porcolean maporcol@microsoft.com
 
 Function GetOwnerCim{
@@ -58,6 +58,30 @@ Function Write-LogMessage {
     }
 }
 
+Function WMITraceCapture {
+  Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $global:resDir + "\WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+
+  # WMI-Activity
+  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets")
+
+  # Microsoft-Windows-WMIAdapter
+  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F}' 0xffffffffffffffff 0xff -ets")
+  #logman update trace "wmi-trace" -p "{2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F}" 0xffffffffffffffff 0xff -ets
+
+  # WMI_Tracing
+  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{1FF6B227-2CA7-40F9-9A66-980EADAA602E}' 0xffffffffffffffff 0xff -ets")
+  #logman update trace "wmi-trace" -p "{1FF6B227-2CA7-40F9-9A66-980EADAA602E}" 0xffffffffffffffff 0xff -ets
+
+  # WMI_Tracing_Client_Operations_Info_Guid
+  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{8E6B6962-AB54-4335-8229-3255B919DD0E}' 0xffffffffffffffff 0xff -ets")
+  #logman update trace "wmi-trace" -p "{8E6B6962-AB54-4335-8229-3255B919DD0E}" 0xffffffffffffffff 0xff -ets
+
+  Write-Log "Trace capture started"
+  read-host “Press ENTER to stop the capture”
+  Invoke-CustomCommand "logman stop 'wmi-trace' -ets"
+  Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
+}
+
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
 $adminRole = [System.Security.Principal.WindowsBuiltInRole]::Administrator
@@ -80,8 +104,6 @@ if ($DataPath) {
 }
 
 New-Item -itemtype directory -path $global:resDir | Out-Null
-$subDir = $global:resDir + "\Subscriptions"
-New-Item -itemtype directory -path $subDir | Out-Null
 
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
@@ -102,6 +124,14 @@ if ($AcceptEula) {
    }
  }
 Write-Log "EULA accepted, continuing"
+
+if ($Trace) {
+  WMITraceCapture
+  exit
+}
+
+$subDir = $global:resDir + "\Subscriptions"
+New-Item -itemtype directory -path $subDir | Out-Null
 
 Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
 $pidsvc = FindServicePid "winmgmt"
@@ -468,6 +498,7 @@ $OSVer = [environment]::OSVersion.Version.Major + [environment]::OSVersion.Versi
 if ($OSVer -gt 6.1) {
 
     $versionRegKey = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    Write-LogMessage "Host: $($env:COMPUTERNAME)"
     Write-LogMessage "Running on: $($versionRegKey.ProductName)"
     Write-LogMessage "Current build number: $($versionRegKey.CurrentBuildNumber).$($versionRegKey.UBR)"
     Write-LogMessage "Build details: $($versionRegKey.BuildLabEx)"
@@ -585,6 +616,15 @@ else {
         2 { Write-LogMessage -Type Warning "The RPC restriction policy is set to 'Authenticated without exceptions', so only Authenticated RPC Clients are allowed, with NO exceptions. This is known to cause on the client some very tricky to investigate 'access denied' errors." }
         Default { Write-LogMessage -Type Error "The RPC restriction policy seems to be present, but its value seems to be wrong. It should be 0, 1 or 2, but is actually $($restrictRpcClients)." }
     }
+}
+
+# Check if RPC Endpoint Mapper Client Authentication is on or not
+$authEpResolution = (Get-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows NT\Rpc" -ErrorAction SilentlyContinue).EnableAuthEpResolution
+if (([string]::IsNullOrEmpty($authEpResolution)) -or ($authEpResolution -eq 0)) {
+    Write-LogMessage -Type Pass "RPC Endpoint Mapper Client Authentication is not configured or disabled."
+}
+elseif ($authEpResolution -eq 1) {
+    Write-LogMessage -Type Warning "RPC Endpoint Mapper Client Authentication is enabled, which may cause some issues with applications/components that do not know how to handle this."
 }
 
 # Check internet settings for RPC to see if there's a restricted port range
@@ -949,6 +989,20 @@ else {
 
 Write-LogMessage "-------------------------"
 Write-LogMessage "Checking networking settings..."
+
+# check firewall remote administration exception policy
+$admException = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile\RemoteAdminSettings" -ErrorAction SilentlyContinue).Enabled
+if (([string]::IsNullOrEmpty($admException)) -or ($admException -eq 0)) {
+    Write-LogMessage -Type Pass "The RemoteAdministrationException policy is not configured or disabled. That is ok."
+}
+elseif ($admException -eq 1) {
+    Write-LogMessage -Type Warning "The RemoteAdministrationException policy is turned on."
+    $admExceptionList = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile\RemoteAdminSettings" -ErrorAction SilentlyContinue).RemoteAddresses
+    if ($admExceptionList) {
+        Write-LogMessage -Type Warning "These are the addresses that are allowed through: $($admExceptionList)"
+    }
+}
+
 
 # check default Firewall rules for WMI 
 $fwRules = Show-NetFirewallRule -PolicyStore ActiveStore | Where-Object { ($_.DisplayGroup -like '*WMI*') -and ($_.Direction -eq 'Inbound') }
