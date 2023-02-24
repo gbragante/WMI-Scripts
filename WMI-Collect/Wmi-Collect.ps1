@@ -1,6 +1,14 @@
-param( [string]$DataPath, [switch]$AcceptEula, [switch]$Trace )
+param( [string]$DataPath, `
+       [switch]$AcceptEula, `
+       [switch]$Trace, `
+       [switch]$Activity, `
+       [switch]$Storage, `
+       [switch]$Cluster, `
+       [switch]$DCOM, `
+       [switch]$RPC, `
+       [switch]$Kernel )
 
-$version = "WMI-Collect (20230221)"
+$version = "WMI-Collect (20230224)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230215)"
@@ -61,24 +69,61 @@ Function Write-LogMessage {
 Function WMITraceCapture {
   Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $global:resDir + "\WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
 
-  # WMI-Activity
-  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets")
+  Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
 
-  # Microsoft-Windows-WMIAdapter
-  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F}' 0xffffffffffffffff 0xff -ets")
-  #logman update trace "wmi-trace" -p "{2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F}" 0xffffffffffffffff 0xff -ets
+  if (-not $Activity) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{2CF953C0-8DF7-48E1-99B9-6816A2FBDC9F}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-WMIAdapter
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1FF6B227-2CA7-40F9-9A66-980EADAA602E}' 0xffffffffffffffff 0xff -ets" # WMI_Tracing
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{8E6B6962-AB54-4335-8229-3255B919DD0E}' 0xffffffffffffffff 0xff -ets" # WMI_Tracing_Client_Operations_Info_Guid
+  }
+  if ($Storage) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{595F33EA-D4AF-4F4D-B4DD-9DACDD17FC6E}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-StorageManagement-WSP-Host
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{88C09888-118D-48FC-8863-E1C6D39CA4DF}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-StorageManagement-WSP-Spaces
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{C6281CF0-7253-4185-9A91-486327931BDC}' 0xffffffffffffffff 0xff -ets" # SxControlGuid
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{9282168F-2432-45F0-B91C-3AF363C149DD}' 0xffffffffffffffff 0xff -ets" # TRACELOG_PROVIDER_NAME_STORAGEWMI
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7E58E69A-E361-4F06-B880-AD2F4B64C944}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-StorageManagement
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{88B892C2-FCCD-4881-946A-032897F954B0}' 0xffffffffffffffff 0xff -ets" # Provider Passthru
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{E14DCDD9-D1EC-4DC3-8395-A606DF8EF115}' 0xffffffffffffffff 0xff -ets" # virtdisk
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{4D20DF22-E177-4514-A369-F1759FEEDEB3}' 0xffffffffffffffff 0xff -ets" # virtdisk
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{C24D82FA-8E22-46C8-9D79-4D763EA059D0}' 0xffffffffffffffff 0xff -ets" # storagewmi
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{80DF111F-178D-44FB-AFB4-5D179DE9D4EC}' 0xffffffffffffffff 0xff -ets" # storagewmi
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{4FA1102E-CC1D-4509-A69F-121E2CC96F9C}' 0xffffffffffffffff 0xff -ets" # SDDC
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7F8DA3B5-A58F-481E-9637-D41435AE6D8B}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-SDDC-Management
+  }
+  
+  if ($Cluster) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{0461BE3C-BC15-4BAD-9A9E-51F3FADFEC75}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-FailoverClustering-WMIProvider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{FF3E7036-643F-430F-B015-2933466FF0FD}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-FailoverClustering-WMI
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{D82DBA12-8B70-49EE-B844-44D0885951D2}' 0xffffffffffffffff 0xff -ets" # CSVFLT
+  }  
+  if ($DCOM) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{B46FA1AD-B22D-4362-B072-9F5BA07B046D}' 0xffffffffffffffff 0xff -ets" # comsvcs
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{A0C4702B-51F7-4ea9-9C74-E39952C694B8}' 0xffffffffffffffff 0xff -ets" # comadmin
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{9474a749-a98d-4f52-9f45-5b20247e4f01}' 0xffffffffffffffff 0xff -ets" # dcomscm
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{bda92ae8-9f11-4d49-ba1d-a4c2abca692e}' 0xffffffffffffffff 0xff -ets" # ole32
+    Invoke-CustomCommand "reg add HKEY_LOCAL_MACHINE\Software\Microsoft\OLE\Tracing /v ExecutablesToTrace /t REG_MULTI_SZ /d * /f"
+  }  
+  if ($RPC) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{6AD52B32-D609-4BE9-AE07-CE8DAE937E39}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-RPC
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{F4AED7C7-A898-4627-B053-44A7CAA12FCD}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-RPC-Events
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{D8975F88-7DDB-4ED0-91BF-3ADF48C48E0C}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-RPCSS
+  }  
 
-  # WMI_Tracing
-  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{1FF6B227-2CA7-40F9-9A66-980EADAA602E}' 0xffffffffffffffff 0xff -ets")
-  #logman update trace "wmi-trace" -p "{1FF6B227-2CA7-40F9-9A66-980EADAA602E}" 0xffffffffffffffff 0xff -ets
-
-  # WMI_Tracing_Client_Operations_Info_Guid
-  Invoke-CustomCommand ("logman update trace 'wmi-trace' -p '{8E6B6962-AB54-4335-8229-3255B919DD0E}' 0xffffffffffffffff 0xff -ets")
-  #logman update trace "wmi-trace" -p "{8E6B6962-AB54-4335-8229-3255B919DD0E}" 0xffffffffffffffff 0xff -ets
+  if ($Kernel) {
+    Invoke-CustomCommand ("logman create trace 'NT Kernel Logger' -ow -o '" + $global:resDir + "\WMI-Trace-kernel-$env:COMPUTERNAME.etl" + "' -p '{9E814AAD-3204-11D2-9A82-006008A86939}' 0x1 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 512 -ets")
+  }
 
   Write-Log "Trace capture started"
-  read-host “Press ENTER to stop the capture”
+  read-host "Press ENTER to stop the capture"
   Invoke-CustomCommand "logman stop 'wmi-trace' -ets"
+  
+  if ($DCOM) {
+    Invoke-CustomCommand "reg delete HKEY_LOCAL_MACHINE\Software\Microsoft\OLE\Tracing /v ExecutablesToTrace /f"
+  }  
+  if ($Kernel) {
+    Invoke-CustomCommand ("logman stop 'NT Kernel Logger' -ets")
+  }
+  
   Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
 }
 
