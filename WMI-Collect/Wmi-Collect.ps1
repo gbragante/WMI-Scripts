@@ -1,17 +1,23 @@
 param( [string]$DataPath, `
        [switch]$AcceptEula, `
+       [switch]$Logs, `
        [switch]$Trace, `
        [switch]$Activity, `
        [switch]$Storage, `
        [switch]$Cluster, `
        [switch]$DCOM, `
        [switch]$RPC, `
+       [switch]$MDM, `
+       [switch]$Perf, `
+       [switch]$RDMS, `
+       [switch]$RDSPub, `
+       [switch]$Network, `
        [switch]$Kernel )
 
 $version = "WMI-Collect (20230224)"
 # by Gianni Bragante - gbrag@microsoft.com
 
-$DiagVersion = "WMI-RPC-DCOM-Diag (20230215)"
+$DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
 # by Marius Porcolean maporcol@microsoft.com
 
 Function GetOwnerCim{
@@ -108,7 +114,42 @@ Function WMITraceCapture {
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{F4AED7C7-A898-4627-B053-44A7CAA12FCD}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-RPC-Events
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{D8975F88-7DDB-4ED0-91BF-3ADF48C48E0C}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-RPCSS
   }  
-
+  if ($MDM) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{0A8E17FD-ED19-4C54-A1E7-5A2829BF507F}' 0xffffffffffffffff 0xff -ets" # DMCmnUtils
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{F1201B5A-E170-42B6-8D20-B57AC57E6416}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-DeviceManagement-Pushrouter
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{9FBF7B95-0697-4935-ADA2-887BE9DF12BC}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-DM-Enrollment-Provider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{3DA494E4-0FE2-415C-B895-FB5265C5C83B}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{E74EFD1A-B62D-4B83-AB00-66F4A166A2D3}' 0xffffffffffffffff 0xff -ets" # Microsoft.Windows.EMPS.Enrollment
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{F9E3B648-9AF1-4DC3-9A8E-BF42C0FBCE9A}' 0xffffffffffffffff 0xff -ets" # Microsoft.Windows.EnterpriseManagement.Enrollment
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{86625C04-72E1-4D36-9C86-CA142FD0A946}' 0xffffffffffffffff 0xff -ets" # Microsoft.Windows.DeviceManagement.OmaDmApiProvider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7D85C2D0-6490-4BB4-BAC1-247D0BD06F10}' 0xffffffffffffffff 0xff -ets" # Microsoft-WindowsPhone-OMADMAPI-Provider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{EF614386-F019-4323-85A1-D6EBAF9CDE12}' 0xffffffffffffffff 0xff -ets" # WPPCtrlGuid
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{A76DBA2C-9683-4BA7-8FE4-C82601E117BB}' 0xffffffffffffffff 0xff -ets" # WMIBRIDGE_TRACE_LOGGING_PROVIDER
+  }  
+  if ($Perf) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{BFFB9DBD-5983-4197-BB1A-243798DDBEC7}' 0xffffffffffffffff 0xff -ets" # WMIPerfClass
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{970406AD-6475-45DA-AA30-57E0037770E4}' 0xffffffffffffffff 0xff -ets" # WMIPerfInst	
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{62841F33-387A-4674-94A4-485C418C57EE}' 0xffffffffffffffff 0xff -ets" # Pdh
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{04D66358-C4A1-419B-8023-23B73902DE2C}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-PDH
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{E1A5FA6F-2E74-4C70-B292-D34C4338D54C}' 0xffffffffffffffff 0xff -ets" # LoadperfDll
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{BC44FFCD-964B-5B85-8662-0BA87EDAF07A}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Perflib
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{13B197BD-7CEE-4B4E-8DD0-59314CE374CE}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Perflib
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{970407AD-6485-45DA-AA30-58E0037770E4}' 0xffffffffffffffff 0xff -ets" # PerfLib
+  }  
+  if ($RDMS) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{FB750AD9-8544-427F-B284-8ED9C6C221AE}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Rdms-UI
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{05DA6B40-219E-4F17-92E6-D663FD87CBA8}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Remote-Desktop-Management-Service
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1B9B72FC-678A-41C1-9365-824658F887E9}' 0xffffffffffffffff 0xff -ets" # RDMSTrace
+  }  
+  if ($RDSPub) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{81B84BCE-06B4-40AE-9840-8F04DD7A8DF7}' 0xffffffffffffffff 0xff -ets" # TSCPubWmiProvider
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{0CEA2AEE-1A4C-4DE7-B11F-161F3BE94669}' 0xffffffffffffffff 0xff -ets" # TSPublishingIconHelperTrace
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1B9B72FC-678A-41C1-9365-824658F887E9}' 0xffffffffffffffff 0xff -ets" # TSPublishingAppFilteringTrace
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7ADA0B31-F4C2-43F4-9566-2EBDD3A6B604}' 0xffffffffffffffff 0xff -ets" # TSCentralPublishingTrace
+  }  
+  if ($Network) {
+    Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $global:resDir + "\NETCAP-" + $env:COMPUTERNAME + ".etl'")
+  }  
   if ($Kernel) {
     Invoke-CustomCommand ("logman create trace 'NT Kernel Logger' -ow -o '" + $global:resDir + "\WMI-Trace-kernel-$env:COMPUTERNAME.etl" + "' -p '{9E814AAD-3204-11D2-9A82-006008A86939}' 0x1 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 512 -ets")
   }
@@ -120,8 +161,11 @@ Function WMITraceCapture {
   if ($DCOM) {
     Invoke-CustomCommand "reg delete HKEY_LOCAL_MACHINE\Software\Microsoft\OLE\Tracing /v ExecutablesToTrace /f"
   }  
+  if ($Network) {
+    Invoke-CustomCommand "netsh trace stop"
+  }  
   if ($Kernel) {
-    Invoke-CustomCommand ("logman stop 'NT Kernel Logger' -ets")
+    Invoke-CustomCommand "logman stop 'NT Kernel Logger' -ets"
   }
   
   Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
@@ -156,6 +200,34 @@ $diagfile = $global:resDir + "\WMI-RPC-DCOM-Diag.txt"
 
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
+if (-not $Trace -and -not $Logs) {
+    Write-Host "WMI-Collect a data collection tools for WMI troubleshooting"
+    Write-Host ""
+    Write-Host "Usage:"
+    Write-Host "WMI-Collect -Logs"
+    Write-Host "  Collects dumps, logs, registry keys, command outputs"
+    Write-Host ""
+    Write-Host "WMI-Collect -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]"
+    Write-Host "  Collects live trace"
+    Write-Host ""
+    Write-Host "WMI-Collect -Logs -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPub][-Network][-Kernel]"
+    Write-Host "  Collects live trace then -Logs data"
+    Write-Host ""
+    Write-Host "Parameters for -Trace :"
+    Write-Host "  -Activity : Only trace WMI-Activity, less detailed"
+    Write-Host "  -Storage : Storage providers"
+    Write-Host "  -Cluster : Cluster providers"
+    Write-Host "  -DCOM : OLE, COM and DCOM tracing"
+    Write-Host "  -RPC : Remote Procedure Call"
+    Write-Host "  -MDM : Mobile Device Manager"
+    Write-Host "  -RDMS : Remote Desktop Management"
+    Write-Host "  -RDSPub : Remote Desktop Publishing"
+    Write-Host "  -Network : Network capture"
+    Write-Host "  -Kernel : Kernel Trace for process start and stop"
+    Write-Host ""
+    exit
+}
+
 Write-Log $version
 if ($AcceptEula) {
   Write-Log "AcceptEula switch specified, silently continuing"
@@ -172,7 +244,9 @@ Write-Log "EULA accepted, continuing"
 
 if ($Trace) {
   WMITraceCapture
-  exit
+  if (-not $Logs) {
+    exit
+  }
 }
 
 $subDir = $global:resDir + "\Subscriptions"
@@ -548,7 +622,7 @@ if ($OSVer -gt 6.1) {
     Write-LogMessage "Current build number: $($versionRegKey.CurrentBuildNumber).$($versionRegKey.UBR)"
     Write-LogMessage "Build details: $($versionRegKey.BuildLabEx)"
 
-    # TODO - try to determine when the last patch was installed...not the best option...
+    # TODO - try to determine when the last CU was installed...not the best option...
     # tried getting the last write time of the build number in the registry, but that's not possible... 
     # can only get a LastWriteTime for a regkey, not for a regvalue
     # https://devblogs.microsoft.com/scripting/use-powershell-to-access-registry-last-modified-time-stamp/
@@ -559,15 +633,15 @@ if ($OSVer -gt 6.1) {
         </Query>
     </QueryList>
 '@
-    $lastSuccessfulPatch = Get-WinEvent -MaxEvents 1 -FilterXml $xmlQuery  -ErrorAction SilentlyContinue
-    if ($lastSuccessfulPatch) {
-        if ($lastSuccessfulPatch.TimeCreated -le ((Get-Date).AddDays(-90))) {
-            Write-LogMessage -Type Warning "This device looks like it may not have been patched recently. Check current build number ($($versionRegKey.UBR)) vs the build number of the latest patches."
+    $lastSuccessfulCU = Get-WinEvent -MaxEvents 1 -FilterXml $xmlQuery  -ErrorAction SilentlyContinue
+    if ($lastSuccessfulCU) {
+        if ($lastSuccessfulCU.TimeCreated -le ((Get-Date).AddDays(-90))) {
+            Write-LogMessage -Type Warning "This device looks like it may not have had cumulative updates installed recently. Check current build number ($($versionRegKey.UBR)) vs the build number in the latest KBs for this OS."
         }
-        Write-LogMessage "The most recent successfully installed patch was $($lastSuccessfulPatch.Properties[0].Value), $(((Get-Date) - $lastSuccessfulPatch.TimeCreated).Days) days ago @ $($lastSuccessfulPatch.TimeCreated)."
+        Write-LogMessage "The most recent successfully installed cumulative update was $($lastSuccessfulCU.Properties[0].Value), $(((Get-Date) - $lastSuccessfulCU.TimeCreated).Days) days ago @ $($lastSuccessfulCU.TimeCreated)."
     }
     else {
-        Write-LogMessage -Type Warning "Could not detect any successful patching events. Check current build number ($($versionRegKey.UBR)) vs the build number of the latest patches."
+        Write-LogMessage -Type Warning "Could not detect any successful cumulative update installation events. Check current build number ($($versionRegKey.UBR)) vs the build number in the latest KBs for this OS."
     }
 
     $psver = $PSVersionTable.PSVersion.Major.ToString() + $PSVersionTable.PSVersion.Minor.ToString()
@@ -586,6 +660,32 @@ else {
     Write-LogMessage -Type Warning "This is a legacy OS, please consider updating to a newer supported version."
 }
 
+Write-LogMessage "-------------------------"
+Write-LogMessage "Checking domain / workgroup settings..."
+
+# Check if machine is part of a domain or not
+$computerSystem = Get-CimInstance -ClassName "Win32_ComputerSystem"
+switch ($computerSystem.DomainRole) {
+    0 { $role = "Standalone Workstation" }
+    1 { $role = "Member Workstation" }
+    2 { $role = "Standalone Server" }
+    3 { $role = "Member Server" }
+    4 { $role = "Backup Domain Controller" }
+    5 { $role = "Primary Domain Controller" }
+    Default { $role = "Unknown" }
+}
+if ($computerSystem.PartOfDomain) {
+    Write-LogMessage "The machine is part of domain: '$($computerSystem.Domain)', having the role of '$($role)'."
+
+    # TODO - more checks for domain joined machines
+
+}
+else {
+    Write-LogMessage -Type Warning "The machine is not joined to a domain, it is a '$($role)'."
+
+    # TODO - more checks for non-domain joined (WORKGROUP) machines
+
+}
 
 Write-LogMessage "-------------------------"
 Write-LogMessage "Checking services..."
@@ -930,6 +1030,43 @@ else {
     Write-LogMessage -Type Pass "Did not detect any WMI Provider Host quota violation events in the Application log."
 }
 
+# Check WMI provider host quotas
+$defaultQuotas = @(
+    @{
+        name  = 'ThreadsPerHost'
+        value = '256'
+    }
+    @{
+        name  = 'HandlesPerHost'
+        value = '4096'
+    }
+    @{
+        name  = 'MemoryPerHost'
+        value = '536870912'
+    }
+    @{
+        name  = 'MemoryAllHosts'
+        value = '1073741824'
+    }
+    @{
+        name  = 'ProcessLimitAllHosts'
+        value = '32'
+    }
+)
+$quotas = Get-CimInstance -Namespace "Root" -ClassName "__ProviderHostQuotaConfiguration"
+if ($null -ne $quotas) {
+    foreach ($defQuota in $defaultQuotas.GetEnumerator()) {
+        if ($defQuota.value -eq $quotas.($defQuota.name)) {
+            Write-LogMessage -Type Pass "The WMI provider host quota '$($defQuota.name)' is set to its default value: $($quotas.($defQuota.name))."
+        }
+        else {
+            Write-LogMessage -Type Warning "The WMI provider host quota '$($defQuota.name)' is NOT set to its default value. Default value: '$($defQuota.value)'. Current value: '$($quotas.($defQuota.name))'"
+        }
+    }
+}
+else {
+    Write-LogMessage -Type Error "Could not read the WMI provider host quotas configuration."
+}
 
 # Check for Corrupted.rec file
 $corruptionSign = Get-ItemProperty "$env:SystemRoot\System32\wbem\repository\Corrupted.rec" -ErrorAction SilentlyContinue
@@ -982,57 +1119,6 @@ else {
 
 
 Write-LogMessage "-------------------------"
-Write-LogMessage "Checking domain / workgroup settings..."
-
-# Check if machine is part of a domain or not
-if ((Get-CimInstance -ClassName Win32_ComputerSystem).PartOfDomain) {
-    Write-LogMessage "The machine is part of a domain."
-
-    # Check SPNs
-    $search = New-Object DirectoryServices.DirectorySearcher([ADSI]"GC://$env:USERDNSDOMAIN") # The SPN is searched in the forest connecting to a Global catalog
-    $SPN = "HTTP/" + $env:COMPUTERNAME
-    Write-LogMessage ("Searching for the SPN $SPN")
-    $search.filter = "(servicePrincipalName=$SPN)"
-    $results = $search.Findall()
-    if ($results.count -gt 0) {
-        foreach ($result in $results) {
-            Write-LogMessage "The SPN HTTP/$env:COMPUTERNAME is registered for DNS name = $($result.properties.dnshostname), DN = $($result.properties.distinguishedname), Category = $($result.properties.objectcategory)"
-            if ($result.properties.objectcategory[0].Contains("Computer")) {
-                if (-not $result.properties.dnshostname[0].Contains($env:COMPUTERNAME)) {
-                    Write-LogMessage -Type Error "The SPN $SPN is registered for different DNS host name: $($result.properties.dnshostname[0])"
-                }
-                else {
-                    Write-LogMessage -Type Pass "The SPN $SPN seems to be correctly registered to the computer account."
-                }
-            }
-            else {
-                Write-LogMessage -Type Error "The SPN $SPN is NOT registered for a computer account."
-            }
-        }
-        if ($results.count -gt 1) {
-            Write-LogMessage -Type Error "The SPN $SPN is duplicate."
-        }
-    }
-    else {
-        Write-LogMessage -Type Pass "The SPN $SPN was not found. That's ok, the SPN HOST/$env:COMPUTERNAME will be used."
-    }
-
-    
-    # TODO - more checks for domain joined machines
-
-
-}
-else {
-    Write-LogMessage -Type Warning "The machine is not joined to a domain."
-
-
-    # TODO - more checks for non-domain joined (WORKGROUP) machines
-
-}
-
-
-
-Write-LogMessage "-------------------------"
 Write-LogMessage "Checking networking settings..."
 
 # check firewall remote administration exception policy
@@ -1066,17 +1152,6 @@ else {
 }
 
 
-# Check HTTP regkey
-$HttpParam = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -ErrorAction SilentlyContinue
-if ($HttpParam -and ($HttpParam.MaxFieldLength -gt 0) -and ($HttpParam.MaxRequestBytes -gt 0)) {
-    Write-LogMessage "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxFieldLength = $($HttpParam.MaxFieldLength)"
-    Write-LogMessage "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\MaxRequestBytes = $($HttpParam.MaxRequestBytes)"
-}
-else {
-    Write-LogMessage -Type Warning "MaxFieldLength and/or MaxRequestBytes are not defined in HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters. This may cause the requests to fail with error 400 in complex AD environemnts. See KB 820129."
-}
-
-
 # Check IP listen filtering
 $iplisten = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -ErrorAction SilentlyContinue).ListenOnlyList
 if ($iplisten) {
@@ -1106,7 +1181,6 @@ if ($proxylength -gt 0) {
 else {
     Write-LogMessage -Type Pass "No NETSH WINHTTP proxy is configured"
 }
-
 
 # Check HTTPERR buildup
 $dir = $env:windir + "\system32\logfiles\HTTPERR"
