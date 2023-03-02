@@ -14,7 +14,7 @@ param( [string]$DataPath, `
        [switch]$Network, `
        [switch]$Kernel )
 
-$version = "WMI-Collect (20230224)"
+$version = "WMI-Collect (20230302)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
@@ -192,12 +192,6 @@ if ($DataPath) {
   $global:resDir = $global:Root + "\" + $resName
 }
 
-New-Item -itemtype directory -path $global:resDir | Out-Null
-
-$global:outfile = $global:resDir + "\script-output.txt"
-$global:errfile = $global:resDir + "\script-errors.txt"
-$diagfile = $global:resDir + "\WMI-RPC-DCOM-Diag.txt"
-
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 if (-not $Trace -and -not $Logs) {
@@ -227,6 +221,12 @@ if (-not $Trace -and -not $Logs) {
     Write-Host ""
     exit
 }
+
+New-Item -itemtype directory -path $global:resDir | Out-Null
+
+$global:outfile = $global:resDir + "\script-output.txt"
+$global:errfile = $global:resDir + "\script-errors.txt"
+$diagfile = $global:resDir + "\WMI-RPC-DCOM-Diag.txt"
 
 Write-Log $version
 if ($AcceptEula) {
@@ -443,7 +443,7 @@ if (ListProcsAndSvcs) {
   ExecQuery -Namespace "root\cimv2" -Query "select * from Win32_Product" | Sort-Object Name | Format-Table -AutoSize -Property Name, Version, Vendor, InstallDate | Out-String -Width 400 | Out-File -FilePath ($global:resDir + "\products.txt")
 
   Write-Log "Collecting the list of installed hotfixes"
-  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn | Out-File $global:resDir\hotfixes.txt
+  Get-HotFix -ErrorAction SilentlyContinue 2>>$global:errfile | Sort-Object -Property InstalledOn -ErrorAction Ignore | Out-File $global:resDir\hotfixes.txt
 
   Write-Log "Collecing GPResult output"
   $cmd = "gpresult /h """ + $global:resDir + "\gpresult.html""" + $RdrErr
