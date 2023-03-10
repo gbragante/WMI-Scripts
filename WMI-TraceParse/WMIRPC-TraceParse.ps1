@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230220
+# WMIRPC-TraceParse - 20230310
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -391,13 +391,13 @@ $col = New-Object system.Data.DataColumn ClientMachine,([string]); $tbEvt.Column
 $col = New-Object system.Data.DataColumn User,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn HostID,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderName,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn OperationID,([int32]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn GroupOperationID,([int32]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn OperationID,([int64]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn GroupOperationID,([int64]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CorrelationID,([string]); $tbEvt.Columns.Add($col)
 
 $tbProv = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn Time,([string]); $tbProv.Columns.Add($col)
-$col = New-Object system.Data.DataColumn GroupOperationID,([int32]); $tbProv.Columns.Add($col)
+$col = New-Object system.Data.DataColumn GroupOperationID,([int64]); $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Operation,([string]); $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Query,([string]); $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Class,([string]); $tbProv.Columns.Add($col)
