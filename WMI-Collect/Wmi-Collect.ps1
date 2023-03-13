@@ -11,10 +11,13 @@ param( [string]$DataPath, `
        [switch]$Perf, `
        [switch]$RDMS, `
        [switch]$RDSPub, `
+       [switch]$SCM, `
        [switch]$Network, `
-       [switch]$Kernel )
+       [switch]$WPR, `
+       [switch]$Kernel
+     )
 
-$version = "WMI-Collect (20230302)"
+$version = "WMI-Collect (20230313)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
@@ -73,7 +76,7 @@ Function Write-LogMessage {
 }
 
 Function WMITraceCapture {
-  Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $global:resDir + "\WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+  Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
 
   Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
 
@@ -148,11 +151,20 @@ Function WMITraceCapture {
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1B9B72FC-678A-41C1-9365-824658F887E9}' 0xffffffffffffffff 0xff -ets" # TSPublishingAppFilteringTrace
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7ADA0B31-F4C2-43F4-9566-2EBDD3A6B604}' 0xffffffffffffffff 0xff -ets" # TSCentralPublishingTrace
   }  
+  if ($SCM) {
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{EBCCA1C2-AB46-4A1D-8C2A-906C2FF25F39}' 0xffffffffffffffff 0xff -ets" # ScReg
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{0063715B-EEDA-4007-9429-AD526F62696E}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Services
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{06184C97-5201-480E-92AF-3A3626C5B140}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Services-Svchost
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{555908D1-A6D7-4695-8E1E-26931D2012F4}' 0xffffffffffffffff 0xff -ets" # Service Control Manager
+  }  
   if ($Network) {
-    Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $global:resDir + "\NETCAP-" + $env:COMPUTERNAME + ".etl'")
+    Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $TracesDir + "NETCAP-" + $env:COMPUTERNAME + ".etl'")
   }  
   if ($Kernel) {
-    Invoke-CustomCommand ("logman create trace 'NT Kernel Logger' -ow -o '" + $global:resDir + "\WMI-Trace-kernel-$env:COMPUTERNAME.etl" + "' -p '{9E814AAD-3204-11D2-9A82-006008A86939}' 0x1 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 512 -ets")
+    Invoke-CustomCommand ("logman create trace 'NT Kernel Logger' -ow -o '" + $TracesDir + "WMI-Trace-kernel-$env:COMPUTERNAME.etl" + "' -p '{9E814AAD-3204-11D2-9A82-006008A86939}' 0x1 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 512 -ets")
+  }
+  if ($WPR) {
+    Invoke-CustomCommand ("wpr -start GeneralProfile -start CPU")
   }
 
   Write-Log "Trace capture started"
@@ -167,9 +179,11 @@ Function WMITraceCapture {
   }  
   if ($Kernel) {
     Invoke-CustomCommand "logman stop 'NT Kernel Logger' -ets"
+  }  
+  Invoke-CustomCommand "tasklist /svc" -DestinationFile "Traces\tasklist-$env:COMPUTERNAME.txt"
+  if ($WPR) {
+    Invoke-CustomCommand ("wpr -stop '"+ $TracesDir + $env:COMPUTERNAME + "_GenProf.etl'")
   }
-  
-  Invoke-CustomCommand "tasklist /svc" -DestinationFile "tasklist-$env:COMPUTERNAME.txt"
 }
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -202,10 +216,10 @@ if (-not $Trace -and -not $Logs) {
     Write-Host "WMI-Collect -Logs"
     Write-Host "  Collects dumps, logs, registry keys, command outputs"
     Write-Host ""
-    Write-Host "WMI-Collect -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel]"
+    Write-Host "WMI-Collect -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPUB][-Network][-Kernel][-WPR]"
     Write-Host "  Collects live trace"
     Write-Host ""
-    Write-Host "WMI-Collect -Logs -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPub][-Network][-Kernel]"
+    Write-Host "WMI-Collect -Logs -Trace [-Activity][-Storage][-Cluster][-DCOM][-RPC][-MDM][-RDMS][-RDSPub][-Network][-Kernel][-WPR]"
     Write-Host "  Collects live trace then -Logs data"
     Write-Host ""
     Write-Host "Parameters for -Trace :"
@@ -244,6 +258,8 @@ if ($AcceptEula) {
 Write-Log "EULA accepted, continuing"
 
 if ($Trace) {
+  $TracesDir = $global:resDir + "\Traces\"
+  New-Item -itemtype directory -path $TracesDir | Out-Null
   WMITraceCapture
   if (-not $Logs) {
     exit
