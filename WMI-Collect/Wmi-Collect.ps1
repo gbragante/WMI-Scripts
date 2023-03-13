@@ -95,6 +95,7 @@ Function WMITraceCapture {
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{80DF111F-178D-44FB-AFB4-5D179DE9D4EC}' 0xffffffffffffffff 0xff -ets" # storagewmi
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{4FA1102E-CC1D-4509-A69F-121E2CC96F9C}' 0xffffffffffffffff 0xff -ets" # SDDC
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{7F8DA3B5-A58F-481E-9637-D41435AE6D8B}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-SDDC-Management
+    Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{6D09BA4F-D4D0-49DD-8BDD-DEB59A33DFA8}' 0xffffffffffffffff 0xff -ets" # TRACELOG_PROVIDER_NAME_SMPHOST
   }
   
   if ($Cluster) {
