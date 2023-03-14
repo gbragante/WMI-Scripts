@@ -17,7 +17,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230313)"
+$version = "WMI-Collect (20230314)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
@@ -210,7 +210,7 @@ if ($DataPath) {
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 if (-not $Trace -and -not $Logs) {
-    Write-Host "WMI-Collect a data collection tools for WMI troubleshooting"
+    Write-Host "$version, a data collection tool for WMI troubleshooting"
     Write-Host ""
     Write-Host "Usage:"
     Write-Host "WMI-Collect -Logs"
@@ -233,6 +233,7 @@ if (-not $Trace -and -not $Logs) {
     Write-Host "  -RDSPub : Remote Desktop Publishing"
     Write-Host "  -Network : Network capture"
     Write-Host "  -Kernel : Kernel Trace for process start and stop"
+    Write-Host "  -WPR: Windows Performance Recorder trace (GeneralProfile CPU)"
     Write-Host ""
     exit
 }
@@ -430,6 +431,11 @@ Write-Log "Exporting firewall rules"
 $cmd = "netsh advfirewall firewall show rule name=all >""" + $global:resDir + "\FirewallRules.txt""" + $RdrErr
 Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+Write-Log "Enumerating services with SC query"
+$cmd = "sc.exe query >>""" + $global:resDir + "\Services-SCQuery.txt""" + $RdrErr
+Write-Log $cmd
+Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
 
 Write-Log "Exporting service configuration"
 $cmd = "sc.exe queryex winmgmt >>""" + $global:resDir + "\WinMgmtServiceConfig.txt""" + $RdrErr
