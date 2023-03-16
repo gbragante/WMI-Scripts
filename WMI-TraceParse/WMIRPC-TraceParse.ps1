@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20230310
+# WMIRPC-TraceParse - 20230316
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName
+  [string]$FileName = "E:\customers\Lab\Telemetry\wmi-trace-w25310wmi-!FMT.txt"
 )
 
 Function LineParam {
@@ -98,6 +98,11 @@ Function CleanQuery {
 Function ToTime{
   param( [string]$time)
   return Get-Date -Year $time.Substring(6,2) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(9,2) -Minute $time.Substring(12,2) -Second $time.Substring(15,2) -Millisecond $time.Substring(18,3)
+}
+
+Function ToTimeP{
+  param( [string]$time)
+  return Get-Date -Year $time.Substring(6,4) -Month $time.Substring(0,2) -Day $time.Substring(3,2) -Hour $time.Substring(11,2) -Minute $time.Substring(14,2) -Second $time.Substring(17,2) -Millisecond $time.Substring(20,3)
 }
 
 Function Parse-ProviderInfo {
@@ -241,6 +246,8 @@ $KFileName = ""
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {
   $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
+  $PerfFileName = (Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.csv")).FullName
+  Write-Host ""
 }
 
 if (-not (Test-Path ($FileName))) {
@@ -250,12 +257,24 @@ if (-not (Test-Path ($FileName))) {
 
 if ($KFileName) {
   if (Test-Path ($KFileName)) {
+    Write-Host ("Found Kernel trace at " + $KFileName)
     $Kernel = $true
   } else {
     Write-Host "Kernel trace not found"
     $Kernel = $false
   }
 }
+
+if ($PerfFileName) {
+  if (Test-Path ($PerfFileName)) {
+    Write-Host ("Found WMIPrvSE performance trace at " + $PerfFileName)
+    $PerfWMIPrvSE = $true
+  } else {
+    Write-Host "WMIPrvSE performance trace not found"
+    $PerfWMIPrvSE = $false
+  }
+}
+Write-Host ""
 
 $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter"; 
              "{4f32adc8-6052-4a04-8701-293ccf2096f0}" = "sspirpc";
@@ -391,6 +410,7 @@ $col = New-Object system.Data.DataColumn ClientMachine,([string]); $tbEvt.Column
 $col = New-Object system.Data.DataColumn User,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn HostID,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderName,([string]); $tbEvt.Columns.Add($col)
+$col = New-Object system.Data.DataColumn CPU,([int]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn OperationID,([int64]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn GroupOperationID,([int64]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CorrelationID,([string]); $tbEvt.Columns.Add($col)
@@ -438,6 +458,15 @@ $col = New-Object system.Data.DataColumn SessionID,([string]); $tbProc.Columns.A
 $col = New-Object system.Data.DataColumn User,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn FileName,([string]); $tbProc.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CommandLine,([string]); $tbProc.Columns.Add($col)
+
+$tbPerf = New-Object system.Data.DataTable
+$col = New-Object system.Data.DataColumn ("Time",[string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Provider,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn PID,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn CPU,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Handles,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Memory,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Threads,([string]); $tbPerf.Columns.Add($col)
 
 $dtInit = Get-Date
 
@@ -626,6 +655,43 @@ if ($Kernel) {
   }
 }
 
+if ($PerfWMIPrvSE) {
+  $sr = new-object System.io.streamreader(get-item $PerfFileName)
+  $headerLine = $sr.ReadLine()
+
+  $header = $headerLine.Replace('"', '').Split(",")
+  $nCol = $header.Count -1
+
+  $line = $sr.ReadLine()
+  while (-not $sr.EndOfStream) {
+    $sample = $line.Replace('"', '').Split(",")
+    for ($cv = 1; $cv -le $nCol; $cv++) {
+      $dt = (ToTimeP $sample[0]).ToString("yyyyMMdd HH:mm:ss")
+      $Prov = FindSep -FindIn $header[$cv] -Left "Status(" -Right ")"
+      $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+      if (-not $aProvRow) {
+        $row = $tbPerf.NewRow()
+        $row.Time = $dt
+        $row.Provider = $Prov
+        $tbPerf.Rows.Add($row)
+        $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+      }      
+      if ($header[$cv] -match "CPU") {
+        $aProvRow[0].CPU = $sample[$cv]
+      } elseif ($header[$cv] -match "Thread") {
+        $aProvRow[0].Threads = $sample[$cv]
+      } elseif ($header[$cv] -match "Process ID") {
+        $aProvRow[0].PID = $sample[$cv]
+      } elseif ($header[$cv] -match "Handle") {
+        $aProvRow[0].Handles = $sample[$cv]
+      } elseif ($header[$cv] -match "Memory") {
+        $aProvRow[0].Memory = $sample[$cv]
+      }
+    }
+    $line = $sr.ReadLine()
+  }  
+}
+
 Write-Host "Processing providers and process information"
 foreach ($row in $tbEvt.Rows) {
   if ($row.Query.ToString() -ne "") {
@@ -655,6 +721,10 @@ foreach ($row in $tbEvt.Rows) {
         if ($aProc.Count -gt 0) {
           $row.Process = $aProc[$aProc.Count-1].FileName
         }
+      }
+      if ($PerfWMIPrvSE) {
+        # Search the provider and the date in tbPerf for the time span of the start of the duration of the query, with a mimum of 1 second
+        # calculate the average of CPU time of the results
       }
     }
   }
