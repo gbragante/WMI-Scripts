@@ -12,12 +12,13 @@ param( [string]$DataPath, `
        [switch]$RDMS, `
        [switch]$RDSPub, `
        [switch]$SCM, `
+       [switch]$PerfMonWMIPrvSE, `
        [switch]$Network, `
        [switch]$WPR, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230314)"
+$version = "WMI-Collect (20230316)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
@@ -157,6 +158,11 @@ Function WMITraceCapture {
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{06184C97-5201-480E-92AF-3A3626C5B140}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Services-Svchost
     Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{555908D1-A6D7-4695-8E1E-26931D2012F4}' 0xffffffffffffffff 0xff -ets" # Service Control Manager
   }  
+  if ($PerfMonWMIPrvSE) {
+    Invoke-CustomCommand ("Logman create counter 'WMI-Trace-PerfMonWMIPrvSE' -f bincirc -max 512 -c '\WMIPrvSE Health Status(*)\*' -si 00:00:01 -o '" + $TracesDir + "WMI-Trace-PerfMonWMIPrvSE-$env:COMPUTERNAME.blg'")
+    Invoke-CustomCommand ("logman start 'WMI-Trace-PerfMonWMIPrvSE'")
+  }
+
   if ($Network) {
     Invoke-CustomCommand ("netsh trace start capture=yes scenario=netconnection maxsize=2048 report=disabled tracefile='" + $TracesDir + "NETCAP-" + $env:COMPUTERNAME + ".etl'")
   }  
@@ -174,6 +180,12 @@ Function WMITraceCapture {
   if ($DCOM) {
     Invoke-CustomCommand "reg delete HKEY_LOCAL_MACHINE\Software\Microsoft\OLE\Tracing /v ExecutablesToTrace /f"
   }  
+  if ($PerfMonWMIPrvSE) {
+    Invoke-CustomCommand ("logman stop 'WMI-Trace-PerfMonWMIPrvSE'")
+    Invoke-CustomCommand ("logman delete 'WMI-Trace-PerfMonWMIPrvSE'")
+    $BLGFile = Get-Item ($TracesDir + "\*.blg")
+    Invoke-CustomCommand ("relog '" + $TracesDir + $BLGFile.Name + "' -f csv -o '" + $TracesDir + "WMI-Trace-PerfMonWMIPrvSE-$env:COMPUTERNAME.csv'")
+  }
   if ($Network) {
     Invoke-CustomCommand "netsh trace stop"
   }  
