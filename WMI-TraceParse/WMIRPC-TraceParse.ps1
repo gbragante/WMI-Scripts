@@ -142,6 +142,7 @@ Function Parse-ConnectToNamespace {
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
   $row.ResultCode = FindSep -FindIn $part -Left "ResultCode = " -Right ";"
   $row.PossibleCause = FindSep -FindIn $part -Left "PossibleCause = " -Right "."
+  $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
@@ -165,6 +166,7 @@ Function Parse-Query {
     $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
   }
+  $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
@@ -188,6 +190,7 @@ Function Parse-Query_ {
     $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
   }
+  $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
@@ -233,6 +236,7 @@ Function Parse-Polling {
   $row.Operation = "Polling"
   $row.Namespace = (FindSep -FindIn $part -Left "'//./" -Right "'").ToLower().Replace("/","\")
   $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
+  $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
 }
@@ -463,7 +467,7 @@ $tbPerf = New-Object system.Data.DataTable
 $col = New-Object system.Data.DataColumn ("Time",[string]); $tbPerf.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Provider,([string]); $tbPerf.Columns.Add($col)
 $col = New-Object system.Data.DataColumn PID,([string]); $tbPerf.Columns.Add($col)
-$col = New-Object system.Data.DataColumn CPU,([string]); $tbPerf.Columns.Add($col)
+$col = New-Object system.Data.DataColumn CPU,([int]); $tbPerf.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Handles,([string]); $tbPerf.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Memory,([string]); $tbPerf.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Threads,([string]); $tbPerf.Columns.Add($col)
@@ -677,7 +681,7 @@ if ($PerfWMIPrvSE) {
         $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       }      
       if ($header[$cv] -match "CPU") {
-        $aProvRow[0].CPU = $sample[$cv]
+        $aProvRow[0].CPU = [int]$sample[$cv].Trim()
       } elseif ($header[$cv] -match "Thread") {
         $aProvRow[0].Threads = $sample[$cv]
       } elseif ($header[$cv] -match "Process ID") {
@@ -731,13 +735,10 @@ foreach ($row in $tbEvt.Rows) {
         if ($aPerf) {
           $CPU = 0
           for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
-            $CPU+= [int]$aPerf[$cv].CPU
+            $CPU+= $aPerf[$cv].CPU
           }
-          $CPU = $CPU / $aPerf.Count
+          $row.CPU = ($CPU / $aPerf.Count)
         }
-        Write-Host ""
-        # Search the provider and the date in tbPerf for the time span of the start of the duration of the query, with a mimum of 1 second
-        # calculate the average of CPU time of the results
       }
     }
   }
@@ -748,6 +749,7 @@ $tbEvt | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".queries.csv"
 $tbProv | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".providers.csv") -noType
 $tbRPC | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".RPCEvents.csv") -noType
 $tbProc | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".processes.csv") -noType
+$tbPerf | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".perf.csv") -noType
 
 $duration = New-TimeSpan -Start $dtInit -End (Get-Date)
 Write-Host "Execution completed in" $duration.TotalSeconds "seconds"
