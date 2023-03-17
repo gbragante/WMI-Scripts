@@ -666,7 +666,7 @@ if ($PerfWMIPrvSE) {
   while (-not $sr.EndOfStream) {
     $sample = $line.Replace('"', '').Split(",")
     for ($cv = 1; $cv -le $nCol; $cv++) {
-      $dt = (ToTimeP $sample[0]).ToString("yyyyMMdd HH:mm:ss")
+      $dt = (ToTimeP $sample[0]).ToString("yyyyMMdd HHmmss")
       $Prov = FindSep -FindIn $header[$cv] -Left "Status(" -Right ")"
       $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       if (-not $aProvRow) {
@@ -723,6 +723,12 @@ foreach ($row in $tbEvt.Rows) {
         }
       }
       if ($PerfWMIPrvSE) {
+        $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
+        $tStart = (ToTime $row.Time)
+        $tEnd = $tstart.AddSeconds($duration / 1000)
+        $sel = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and Provider = '" + $row.ProviderName + "'"
+        $aPerf = $tbPerf.Select($sel)
+        Write-Host ""
         # Search the provider and the date in tbPerf for the time span of the start of the duration of the query, with a mimum of 1 second
         # calculate the average of CPU time of the results
       }
