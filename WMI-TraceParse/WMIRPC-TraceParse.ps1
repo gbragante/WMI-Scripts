@@ -728,6 +728,13 @@ foreach ($row in $tbEvt.Rows) {
         $tEnd = $tstart.AddSeconds($duration / 1000)
         $sel = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and Provider = '" + $row.ProviderName + "'"
         $aPerf = $tbPerf.Select($sel)
+        if ($aPerf) {
+          $CPU = 0
+          for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
+            $CPU+= [int]$aPerf[$cv].CPU
+          }
+          $CPU = $CPU / $aPerf.Count
+        }
         Write-Host ""
         # Search the provider and the date in tbPerf for the time span of the start of the duration of the query, with a mimum of 1 second
         # calculate the average of CPU time of the results
