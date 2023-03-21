@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230316
+# WMIRPC-TraceParse - 20230321
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -247,6 +247,7 @@ if ($FileName -eq "") {
 }
 
 $KFileName = ""
+$bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {
   $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
@@ -414,7 +415,12 @@ $col = New-Object system.Data.DataColumn ClientMachine,([string]); $tbEvt.Column
 $col = New-Object system.Data.DataColumn User,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn HostID,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderName,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn CPU,([int]); $tbEvt.Columns.Add($col)
+if ($PerfWMIPrvSE) {
+  $col = New-Object system.Data.DataColumn CPU,([int16]); $tbEvt.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn Memory,([int32]); $tbEvt.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn Threads,([int16]); $tbEvt.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn Handles,([int16]); $tbEvt.Columns.Add($col)
+}
 $col = New-Object system.Data.DataColumn OperationID,([int64]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn GroupOperationID,([int64]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CorrelationID,([string]); $tbEvt.Columns.Add($col)
@@ -557,6 +563,7 @@ while (-not $sr.EndOfStream) {
   }
 
   if ($part -match  "\[Debug \]" -or $part -match  "\[Debug17 \]") { 
+    $bRPC = $True
     $LP = LineParam
     if ($part -match  "RPC call started") {
       Write-Host $part
@@ -734,10 +741,20 @@ foreach ($row in $tbEvt.Rows) {
         $aPerf = $tbPerf.Select($sel)
         if ($aPerf) {
           $CPU = 0
+          $Memory = 0
+          $Handles = 0
+          $Threads = 0
           for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
             $CPU+= $aPerf[$cv].CPU
+            $Memory+= $aPerf[$cv].Memory
+            $Threads+= $aPerf[$cv].Threads
+            $Handles+= $aPerf[$cv].Handles
           }
-          $row.CPU = ($CPU / $aPerf.Count)
+          # $row.CPU = ($CPU / $aPerf.Count) <==== it is better to provide the average or the sum for queries lasting longer than one second?
+          $row.CPU = $CPU
+          $row.Memory = ($Memory / $aPerf.Count)
+          $row.Threads = ($Threads / $aPerf.Count)
+          $row.Handles = ($Handles / $aPerf.Count)
         }
       }
     }
@@ -747,9 +764,15 @@ foreach ($row in $tbEvt.Rows) {
 $file = Get-Item $FileName
 $tbEvt | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".queries.csv") -noType
 $tbProv | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".providers.csv") -noType
-$tbRPC | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".RPCEvents.csv") -noType
 $tbProc | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".processes.csv") -noType
-$tbPerf | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".perf.csv") -noType
+
+if ($bRPC) {
+  $tbRPC | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".RPCEvents.csv") -noType
+}
+
+if ($PerfWMIPrvSE) {
+  $tbPerf | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".perf.csv") -noType
+}
 
 $duration = New-TimeSpan -Start $dtInit -End (Get-Date)
 Write-Host "Execution completed in" $duration.TotalSeconds "seconds"
