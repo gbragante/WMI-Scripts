@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20230321
+# WMIRPC-TraceParse - 20230406
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName = "E:\customers\Lab\Telemetry\wmi-trace-w25310wmi-!FMT.txt"
+  [string]$FileName
 )
 
 Function LineParam {
@@ -251,8 +251,7 @@ $bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {
   $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
-  $PerfFileName = (Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.csv")).FullName
-  Write-Host ""
+  $PerfFileName = (Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName
 }
 
 if (-not (Test-Path ($FileName))) {
@@ -273,13 +272,15 @@ if ($KFileName) {
 if ($PerfFileName) {
   if (Test-Path ($PerfFileName)) {
     Write-Host ("Found WMIPrvSE performance trace at " + $PerfFileName)
+    Write-Host ("relog """ + $PerfFileName + """ -f blg -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y")
+    Invoke-Expression ("relog """ + $PerfFileName + """ -f csv -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y") | Out-Null
     $PerfWMIPrvSE = $true
+    $PerfFileName = $PerfFileName.Replace(".blg", ".csv")
   } else {
     Write-Host "WMIPrvSE performance trace not found"
     $PerfWMIPrvSE = $false
   }
 }
-Write-Host ""
 
 $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter"; 
              "{4f32adc8-6052-4a04-8701-293ccf2096f0}" = "sspirpc";
@@ -667,6 +668,8 @@ if ($Kernel) {
 }
 
 if ($PerfWMIPrvSE) {
+  $tbPerfTemp = $tbPerf.Clone()
+
   $sr = new-object System.io.streamreader(get-item $PerfFileName)
   $headerLine = $sr.ReadLine()
 
@@ -676,29 +679,40 @@ if ($PerfWMIPrvSE) {
   $line = $sr.ReadLine()
   while (-not $sr.EndOfStream) {
     $sample = $line.Replace('"', '').Split(",")
+    Write-host $sample
     for ($cv = 1; $cv -le $nCol; $cv++) {
       $dt = (ToTimeP $sample[0]).ToString("yyyyMMdd HHmmss")
-      $Prov = FindSep -FindIn $header[$cv] -Left "Status(" -Right ")"
-      $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+      $Prov = FindSep -FindIn $header[$cv] -Left "(" -Right ")"
+      $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       if (-not $aProvRow) {
-        $row = $tbPerf.NewRow()
+        $row = $tbPerfTemp.NewRow()
         $row.Time = $dt
         $row.Provider = $Prov
-        $tbPerf.Rows.Add($row)
-        $aProvRow = $tbPerf.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+        $tbPerfTemp.Rows.Add($row)
+        $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       }      
-      if ($header[$cv] -match "CPU") {
+      if ($header[$cv] -match "Processor Time") {
         $aProvRow[0].CPU = [int]$sample[$cv].Trim()
       } elseif ($header[$cv] -match "Thread") {
         $aProvRow[0].Threads = $sample[$cv]
-      } elseif ($header[$cv] -match "Process ID") {
+      } elseif ($header[$cv] -match "ID Process") {
         $aProvRow[0].PID = $sample[$cv]
       } elseif ($header[$cv] -match "Handle") {
         $aProvRow[0].Handles = $sample[$cv]
-      } elseif ($header[$cv] -match "Memory") {
+      } elseif ($header[$cv] -match "Working Set") {
         $aProvRow[0].Memory = $sample[$cv]
       }
     }
+    foreach ($row in $tbPerfTemp.Rows) {
+      if ($row.PID -gt 0) {
+        $newRow = $tbPerf.NewRow()
+        foreach ($column in $tbPerfTemp.Columns) {
+          $newRow[$column.ColumnName] = $row[$column.ColumnName]
+        }
+        $tbPerf.Rows.Add($newRow)
+      }
+    }
+    $tbPerfTemp.Rows.Clear()
     $line = $sr.ReadLine()
   }  
 }
@@ -737,7 +751,7 @@ foreach ($row in $tbEvt.Rows) {
         $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
         $tStart = (ToTime $row.Time)
         $tEnd = $tstart.AddSeconds($duration / 1000)
-        $sel = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and Provider = '" + $row.ProviderName + "'"
+        $sel = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
         $aPerf = $tbPerf.Select($sel)
         if ($aPerf) {
           $CPU = 0
@@ -750,8 +764,8 @@ foreach ($row in $tbEvt.Rows) {
             $Threads+= $aPerf[$cv].Threads
             $Handles+= $aPerf[$cv].Handles
           }
-          # $row.CPU = ($CPU / $aPerf.Count) <==== it is better to provide the average or the sum for queries lasting longer than one second?
-          $row.CPU = $CPU
+          $row.CPU = ($CPU / $aPerf.Count)
+          #$row.CPU = $CPU  <==== it is better to provide the average or the sum for queries lasting longer than one second?
           $row.Memory = ($Memory / $aPerf.Count)
           $row.Threads = ($Threads / $aPerf.Count)
           $row.Handles = ($Handles / $aPerf.Count)
