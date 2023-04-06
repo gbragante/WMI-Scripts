@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230405)"
+$version = "WMI-Collect (20230406)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
@@ -245,7 +245,7 @@ if (-not $Trace -and -not $Logs) {
     Write-Host "  -Network : Network capture"
     Write-Host "  -Kernel : Kernel Trace for process start and stop"
     Write-Host "  -WPR: Windows Performance Recorder trace (GeneralProfile CPU)"
-    Write-Host "  -PerfMonWMIPrvSE: Performance monitor data for WMIPrvSE proces"    
+    Write-Host "  -PerfMonWMIPrvSE: Performance monitor data for WMIPrvSE processes"
     Write-Host ""
     exit
 }
