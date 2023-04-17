@@ -286,7 +286,7 @@ Write-Log "Collecting dump of the svchost process hosting the WinMgmt service"
 $pidsvc = FindServicePid "winmgmt"
 if ($pidsvc) {
   Write-Log "Found the PID using FindServicePid"
-  CreateProcDump $pidsvc $global:resDir "scvhost-WinMgmt"
+  CreateProcDump $pidsvc $global:resDir "svchost-WinMgmt"
 } else {
   Write-Log "Cannot find the PID using FindServicePid, looping through processes"
   $list = Get-Process
@@ -296,7 +296,7 @@ if ($pidsvc) {
       $prov = Get-Process -id $proc.id -Module -ErrorAction SilentlyContinue | Where-Object {$_.ModuleName -eq "wmisvc.dll"} 
       if (($prov | Measure-Object).count -gt 0) {
         Write-Log "Found the PID having wmisvc.dll loaded"
-        CreateProcDump $proc.id $global:resDir "scvhost-WinMgmt"
+        CreateProcDump $proc.id $global:resDir "svchost-WinMgmt"
         $found = $true
         break
       }
