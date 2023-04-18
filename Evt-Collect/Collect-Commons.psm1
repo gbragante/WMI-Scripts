@@ -1,4 +1,4 @@
-# Collect-Commons 20230111
+# Collect-Commons 20230418
 
 Function Write-Log {
   param( [string] $msg )
@@ -250,7 +250,10 @@ Function CollectSystemInfoWMI {
 
 Function ExpEnvVar {
   Write-Log "Exporing environment variables"
-  Get-ChildItem env: | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+  $env = Get-ChildItem env:
+  foreach ($var in $env) {
+    ($var.name  + " = " + $var.Value) | Out-File -FilePath ($global:resDir + "\EnvironmentVariables.txt") -Append
+  }
 }
 
 Function ExpRegFeatureManagement {
