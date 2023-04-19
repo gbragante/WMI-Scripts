@@ -248,7 +248,10 @@ Write-Log "Get-DscResource output"
 Get-DscResource | Out-File -FilePath ($global:resDir + "\Get-DscResource.txt")
 
 Write-Log "Get-DscLocalConfigurationManager output"
-Get-DscLocalConfigurationManager | Out-File -FilePath ($global:resDir + "\Get-DscLocalConfigurationManager.txt")
+$lcm = Get-DscLocalConfigurationManager 
+$lcm | Out-File -FilePath ($global:resDir + "\Get-DscLocalConfigurationManager.txt")
+("ConfigurationDownloadManagers.serverURL = " + $lcm.ConfigurationDownloadManagers.serverURL) | Out-File -FilePath ($global:resDir + "\Get-DscLocalConfigurationManager.txt") -Append
+("ReportManagers.serverURL = " + $lcm.ReportManagers.serverURL) | Out-File -FilePath ($global:resDir + "\Get-DscLocalConfigurationManager.txt") -Append
 
 try {
   Write-Log "Get-DscConfiguration output"
