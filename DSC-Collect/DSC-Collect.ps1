@@ -1,6 +1,6 @@
 param( [string]$DataPath, [switch]$AcceptEula )
 
-$version = "DSC-Collect (20220413)"
+$version = "DSC-Collect (20230419)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function GetStore($store) {
@@ -266,6 +266,14 @@ if (Test-Path -Path ($dir + "\appcmd.exe")) {
   $cmd = $dir + "\appcmd list wp >""" + $global:resDir + "\IIS-WorkerProcesses.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append  
+
+  $lines = Get-Content ($global:resDir + "\IIS-WorkerProcesses.txt")
+  foreach ($line in $lines) {
+    $aLine = $line.Split("""")
+    if ($aLine[2] -match "applicationPool:PSWS") {
+      CreateProcDump $aLine[1] $global:resDir "W3WP"
+    }
+  }
 }
 
 Write-Log "Get-WinSystemLocale output"
