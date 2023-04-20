@@ -1,4 +1,4 @@
-# WMI-Report (20220202)
+# WMI-Report (20230420)
 # by Gianni Bragante gbrag@microsoft.com
 
 param( [string]$DataPath, [switch]$AcceptEula )
@@ -44,20 +44,59 @@ Function Get-Classes ($ns) {
           $row.NameSpace = $ns
           $row.Name = $_.name
           $row.Inst = $_.GetInstances().Count
+          $row.Size = GetClassSize -className $_.name -ns $ns 
           $tbStatic.Rows.Add($row)
         } else {
+          $row = $tbStatic.NewRow()
+          $row.NameSpace = $ns
+          $row.Name = $_.name
+
           $inst = $_.GetInstances().Count # Class with instances, repository as well
-          #if ($inst  -gt 0) {
-            $row = $tbStatic.NewRow()
-            $row.NameSpace = $ns
-            $row.Name = $_.name
+          if ($inst  -gt 0) {
             $row.Inst = $Inst
-            $tbStatic.Rows.Add($row)
-          #}
+            $row.Size = GetClassSize -className $_.name -ns $ns 
+          } else {
+            $row.Inst = 0
+            $row.Size = 0
+          }
+
+          $tbStatic.Rows.Add($row)
         }
       }
     }
   }
+}
+
+Function GetClassSize ($ns, $className) {
+  $cSize = 0
+  $classObj = Get-CimInstance -ClassName $className -Namespace $ns -ErrorAction SilentlyContinue
+  if ($classObj) {
+    ForEach ($inst in $classObj){
+      ForEach($prop in $inst.CimInstanceProperties) {
+        switch ($prop.CimType) {
+          "SInt8" {$cSize += 1}
+          "UInt8" {$cSize += 1}
+          "SInt16" {$cSize += 2}
+          "UInt16" {$cSize += 2}
+          "SInt32" {$cSize += 4}
+          "UInt32" {$cSize += 4}
+          "SInt64" {$cSize += 8}
+          "UInt64" {$cSize += 8}
+          "Real32" {$cSize += 4}
+          "Real64" {$cSize += 8}
+          "Char16" {$cSize += 2}
+          "Boolean" {$cSize += 1}
+          "Datetime" {$cSize += 8}
+          "String" {
+            if ($prop.value) {
+              $cSize += [Text.Encoding]::Unicode.GetByteCount($prop.value.ToString())
+             }
+          }
+        }
+      }
+    }
+  }
+  return $cSize
 }
 
 Function Get-ProvDetails($ns, $name, $clsid, $HostingModel, $UnloadTimeout) {
@@ -393,7 +432,9 @@ $col = New-Object system.Data.DataColumn NameSpace,([string])
 $tbStatic.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
 $tbStatic.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Inst,([string])
+$col = New-Object system.Data.DataColumn Inst,([Int32])
+$tbStatic.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Size,([Int64])
 $tbStatic.Columns.Add($col)
 
 $tbSec = New-Object system.Data.DataTable “Security”
