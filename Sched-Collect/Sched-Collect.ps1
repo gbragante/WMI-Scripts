@@ -1,7 +1,33 @@
-param( [string]$DataPath, [switch]$AcceptEula )
+param( [string]$DataPath, `
+       [switch]$AcceptEula, `
+       [switch]$Logs, `
+       [switch]$Trace
+     )
 
-$version = "Sched-Collect (20211224)"
+$version = "Sched-Collect (20230428)"
 # by Gianni Bragante - gbrag@microsoft.com
+
+Function SchedTraceCapture {
+  Invoke-CustomCommand ("logman create trace 'Sched-Trace' -ow -o '" + $TracesDir + "Sched-Trace-$env:COMPUTERNAME.etl" + "' -p '{6A187A25-2325-45F4-A928-B554329EBD51}' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{A7C8D6F2-1088-484B-A516-1AE0C3BF8216}' 0xffffffffffffffff 0xff -ets" # SchedWmiGuid
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{10FF35F4-901F-493F-B272-67AFB81008D4}' 0xffffffffffffffff 0xff -ets" # Microsoft.Windows.TaskScheduler
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{1D665082-C852-4AB0-A1B2-C26488454C41}' 0xffffffffffffffff 0xff -ets" # UBPM
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{047311A9-FA52-4A68-A1E4-4E289FBB8D17}' 0xffffffffffffffff 0xff -ets" # JobCtlGuid
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{DE7B24EA-73C8-4A09-985D-5BDADCFA9017}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-TaskScheduler
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{42695762-EA50-497A-9068-5CBBB35E0B95}' 0xffffffffffffffff 0xff -ets" # Windows Notification Facility Provider
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{0657ADC1-9AE8-4E18-932D-E6079CDA5AB3}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-TimeBroker
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{E8109B99-3A2C-4961-AA83-D1A7A148ADA8}' 0xffffffffffffffff 0xff -ets" # BrokerCommon
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{19043218-3029-4BE2-A6C1-B6763CECB3CC}' 0xffffffffffffffff 0xff -ets" # EventAggregation
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{077E5C98-2EF4-41D6-937B-465A791C682E}' 0xffffffffffffffff 0xff -ets" # DAB/Desktop Activity Broker
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{B6BFCC79-A3AF-4089-8D4D-0EECB1B80779}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-SystemEventsBroker
+  Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{E6835967-E0D2-41FB-BCEC-58387404E25A}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-BrokerInfrastructure
+
+  Write-Log "Trace capture started"
+  read-host "Press ENTER to stop the capture"
+  Invoke-CustomCommand "logman stop 'Sched-Trace' -ets"  
+  Invoke-CustomCommand "tasklist /svc" -DestinationFile "Traces\tasklist-$env:COMPUTERNAME.txt"
+}
 
 $myWindowsID = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $myWindowsPrincipal = new-object System.Security.Principal.WindowsPrincipal($myWindowsID)
@@ -24,12 +50,28 @@ if ($DataPath) {
   $global:resDir = $global:Root + "\" + $resName
 }
 
+Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
+
+if (-not $Trace -and -not $Logs) {
+    Write-Host "$version, a data collection tool for Task Scheduler troubleshooting"
+    Write-Host ""
+    Write-Host "Usage:"
+    Write-Host "Sched-Collect -Logs"
+    Write-Host "  Collects dumps, logs, registry keys, command outputs"
+    Write-Host ""
+    Write-Host "Sched-Collect -Trace"
+    Write-Host "  Collects live trace"
+    Write-Host ""
+    Write-Host "Sched-Collect -Logs -Trace"
+    Write-Host "  Collects live trace then -Logs data"
+    Write-Host ""
+    exit
+}
+
 New-Item -itemtype directory -path $global:resDir | Out-Null
 
 $global:outfile = $global:resDir + "\script-output.txt"
 $global:errfile = $global:resDir + "\script-errors.txt"
-
-Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 Write-Log $version
 if ($AcceptEula) {
@@ -43,6 +85,15 @@ if ($AcceptEula) {
   }
 }
 Write-Log "EULA accepted, continuing"
+
+if ($Trace) {
+  $TracesDir = $global:resDir + "\Traces\"
+  New-Item -itemtype directory -path $TracesDir | Out-Null
+  SchedTraceCapture
+  if (-not $Logs) {
+    exit
+  }
+}
 
 $pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32_service where Name='Schedule'").ProcessId
 if ($pidsvc) {
