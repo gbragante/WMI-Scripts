@@ -21,7 +21,7 @@ param( [string]$DataPath, `
 $version = "WMI-Collect (20230427)"
 # by Gianni Bragante - gbrag@microsoft.com
 
-$DiagVersion = "WMI-RPC-DCOM-Diag (20230224)"
+$DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
 # by Marius Porcolean maporcol@microsoft.com
 
 Function GetOwnerCim{
@@ -908,6 +908,11 @@ foreach ($permission in $defaultPermissions.GetEnumerator()) {
             Write-LogMessage -Type Error "The '$($permission.name)' group is NOT present in Access with default permissions, please verify."
         }
     }
+
+    $localGroup = Get-LocalGroup -SID $permission.sid -ErrorAction SilentlyContinue
+    if ($localGroup -and !($localGroup.Name -eq $permission.name)) {
+        Write-LogMessage -Type Warning "The name of the group is not the original English one (current name: '$($localGroup.Name)'). This is usually because the OS is in a different language & it can cause confusion in some situations, so please be aware / keep this in mind."
+    }
 }
 
 # Check enabled DCOM protocols
@@ -1046,6 +1051,11 @@ else {
         }
         else {
             Write-LogMessage -Type Error "The '$($permission.name)' group is NOT present with default permissions, please verify."
+        }
+
+        $localGroup = Get-LocalGroup -SID $permission.sid -ErrorAction SilentlyContinue
+        if ($localGroup -and !($localGroup.Name -eq $permission.name)) {
+            Write-LogMessage -Type Warning "The name of the group is not the original English one (current name: '$($localGroup.Name)'). This is usually because the OS is in a different language & it can cause confusion in some situations, so please be aware / keep this in mind."
         }
     }
 }
@@ -1220,6 +1230,36 @@ if ($proxylength -gt 0) {
 }
 else {
     Write-LogMessage -Type Pass "No NETSH WINHTTP proxy is configured"
+}
+
+# Check other kinds of proxy
+$userSettings = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+if ($userSettings.AutoConfigUrl) {
+    Write-LogMessage -Type Warning "The user has a proxy auto configuration (PAC) file setup: $($userSettings.AutoConfigUrl)"
+}
+if ($userSettings.ProxyServer) {
+    if ($userSettings.ProxyEnable -eq 1) {
+        Write-LogMessage -Type Warning "The user has an explicitly configured proxy server which is enabled: $($userSettings.ProxyServer)"
+    }
+    else {
+        Write-LogMessage -Type Info "The user has an explicitly configured proxy server, but it is not enabled: $($userSettings.ProxyServer)"
+    }
+}
+
+if (!(Test-Path 'HKU:\S-1-5-18')) {
+    New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+}
+$systemSettings = Get-ItemProperty "HKU:\S-1-5-18\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
+if ($systemSettings.AutoConfigUrl) {
+    Write-LogMessage -Type Warning "The system has a proxy auto configuration (PAC) file setup: $($systemSettings.AutoConfigUrl)"
+}
+if ($systemSettings.ProxyServer) {
+    if ($systemSettings.ProxyEnable -eq 1) {
+        Write-LogMessage -Type Warning "The system has an explicitly configured proxy server which is enabled: $($systemSettings.ProxyServer)"
+    }
+    else {
+        Write-LogMessage -Type Info "The system has an explicitly configured proxy server, but it is not enabled: $($systemSettings.ProxyServer)"
+    }
 }
 
 # Check HTTPERR buildup
