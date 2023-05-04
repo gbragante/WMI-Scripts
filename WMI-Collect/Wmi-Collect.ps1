@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230427)"
+$version = "WMI-Collect (20230504)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -77,7 +77,19 @@ Function Write-LogMessage {
 }
 
 Function WMITraceCapture {
-  Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+  $cmd =  ("logman create trace 'wmi-trace' -ow -o '" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+  Write-Log $cmd
+  while ($true) {
+    $out = Invoke-Expression $cmd
+    if ($out -match "Error") {
+      Write-Log ("Waiting for the WMI etw provider to become available" + $out)
+      Sleep 1
+    } else {
+      Write-Log "Trace created"
+      break
+    }
+  }
+  #Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
 
   Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
 
