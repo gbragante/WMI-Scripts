@@ -1,4 +1,4 @@
-# Collect-Commons 20230418
+# Collect-Commons 20230510
 
 Function Write-Log {
   param( [string] $msg )
@@ -182,6 +182,8 @@ Function CollectSystemInfoNoWMI {
   "NetBIOS Domain name".PadRight($pad) + " : " + (GetNBDomainName) | Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
   ExpEnvVar
+
+  Invoke-CustomCommand -Command "dsregcmd /status" -DestinationFile "DSRegStatus.txt"
 }
 
 Function CollectSystemInfoWMI {
@@ -246,6 +248,8 @@ Function CollectSystemInfoWMI {
   Out-File -FilePath ($global:resDir + "\SystemInfo.txt") -Append
 
   ExpEnvVar
+
+  Invoke-CustomCommand -Command "dsregcmd /status" -DestinationFile "DSRegStatus.txt"
 }
 
 Function ExpEnvVar {
