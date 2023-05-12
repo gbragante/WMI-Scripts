@@ -1,13 +1,26 @@
 param( [string]$DataPath, `
        [switch]$AcceptEula, `
        [switch]$Logs, `
-       [switch]$Trace
+       [switch]$Trace, `
+       [string]$StartAt, `
+       [string]$Duration
      )
 
-$version = "Sched-Collect (20230428)"
+$version = "Sched-Collect (20230512)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function SchedTraceCapture {
+  if ($DateStart) {
+    $diff = New-TimeSpan -Start (Get-Date) -End $DateStart # Recalculating the difference because the user may have been taking time to read the EULA
+    if ($diff.TotalSeconds -lt 0) {
+      $waitSeconds = 0
+    } else {
+      $waitSeconds = [int]$diff.TotalSeconds
+    }
+    Write-Log ("Waiting " + $waitSeconds + " seconds until $DateStart")
+    Start-Sleep -Seconds $waitSeconds
+  }
+
   Invoke-CustomCommand ("logman create trace 'Sched-Trace' -ow -o '" + $TracesDir + "Sched-Trace-$env:COMPUTERNAME.etl" + "' -p '{6A187A25-2325-45F4-A928-B554329EBD51}' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
 
   Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{A7C8D6F2-1088-484B-A516-1AE0C3BF8216}' 0xffffffffffffffff 0xff -ets" # SchedWmiGuid
@@ -24,7 +37,12 @@ Function SchedTraceCapture {
   Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{E6835967-E0D2-41FB-BCEC-58387404E25A}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-BrokerInfrastructure
 
   Write-Log "Trace capture started"
-  read-host "Press ENTER to stop the capture"
+  if ($Duration) {
+    Write-Log ("The capture will be stopped in " + $durSec + " seconds")
+    Start-Sleep $durSec
+  } else {
+    read-host "Press ENTER to stop the capture"
+  }
   Invoke-CustomCommand "logman stop 'Sched-Trace' -ets"  
   Invoke-CustomCommand "tasklist /svc" -DestinationFile "Traces\tasklist-$env:COMPUTERNAME.txt"
 }
@@ -59,13 +77,46 @@ if (-not $Trace -and -not $Logs) {
     Write-Host "Sched-Collect -Logs"
     Write-Host "  Collects dumps, logs, registry keys, command outputs"
     Write-Host ""
-    Write-Host "Sched-Collect -Trace"
+    Write-Host "Sched-Collect -Trace [-StartAt <YYYYMMDD-HHMMSS>] [-Duration <seconds>]"
     Write-Host "  Collects live trace"
     Write-Host ""
     Write-Host "Sched-Collect -Logs -Trace"
     Write-Host "  Collects live trace then -Logs data"
     Write-Host ""
+    Write-Host "Parameters for -Trace"
+    Write-Host "  -StartAt : Will start the trace at the specified date/time"
+    Write-Host "  -Duration : Stops the trace after the specified numner of seconds"
     exit
+}
+
+if ($Trace -and $StartAt) {
+  try {
+    $DateStart = Get-Date -Year $StartAt.Substring(0,4) -Month $StartAt.Substring(4,2) -Day $StartAt.Substring(6,2) -Hour $StartAt.Substring(9,2) -Minute $StartAt.Substring(11,2) -Second $StartAt.Substring(13,2)
+    Write-Host $DateStart
+  }
+  catch {
+    Write-Host "Invalid date $StartAt"
+    exit
+  }
+  $diff = New-TimeSpan -Start (Get-Date) -End $DateStart
+  if ($diff.TotalSeconds -lt 0) {
+    Write-Host "The specified date $DateStart is in the past"
+    exit
+  }
+}
+
+if ($Trace -and $Duration) {
+  try {
+    $durSec = [int]$Duration
+  }
+  catch {
+    Write-Host "Invalid value for duration : $duration"
+    exit
+  }
+  if ($durSec -lt 0) {
+    Write-Host "Specified value for duration is less than 0"
+    exit
+  }
 }
 
 New-Item -itemtype directory -path $global:resDir | Out-Null
