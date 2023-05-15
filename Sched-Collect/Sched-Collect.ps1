@@ -6,7 +6,7 @@ param( [string]$DataPath, `
        [string]$Duration
      )
 
-$version = "Sched-Collect (20230512)"
+$version = "Sched-Collect (20230515)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 Function SchedTraceCapture {
@@ -184,6 +184,9 @@ $cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersio
 Invoke-Expression $cmd
 
 ExpRegFeatureManagement
+
+Invoke-CustomCommand -Command "WHOAMI /all" -DestinationFile "WHOAMI.txt"
+Invoke-CustomCommand -Command "cmdkey /list" -DestinationFile "cmdkeyList.txt"
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
