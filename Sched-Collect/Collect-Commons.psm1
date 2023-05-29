@@ -1,4 +1,4 @@
-# Collect-Commons 20230510
+# Collect-Commons 20230529
 
 Function Write-Log {
   param( [string] $msg )
@@ -746,5 +746,10 @@ function Deny-IfNotAdmin {
   }
   
 } 
+
+Function DecodeError ($res) {
+  $out = Invoke-Expression ("certutil /error " + $res)
+  return $out[1].Substring($out[1].IndexOf(":")+2)
+}
 
 Export-ModuleMember -Function *
