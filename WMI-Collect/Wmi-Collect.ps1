@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230504)"
+$version = "WMI-Collect (20230601)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -230,7 +230,14 @@ if ($DataPath) {
   $global:resDir = $global:Root + "\" + $resName
 }
 
-Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
+try {
+  Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking -ErrorAction Stop
+}
+catch {
+  Write-Host "Unable to import the helper module, can't continue without it! Exiting..." -ForegroundColor Red
+  Write-Host ($_.Exception.Message) -ForegroundColor Red
+  exit
+}
 
 if (-not $Trace -and -not $Logs) {
     Write-Host "$version, a data collection tool for WMI troubleshooting"
@@ -281,6 +288,7 @@ if ($AcceptEula) {
    }
  }
 Write-Log "EULA accepted, continuing"
+Write-Log ("Command line : " + $MyInvocation.Line)
 
 if ($Trace) {
   $TracesDir = $global:resDir + "\Traces\"
