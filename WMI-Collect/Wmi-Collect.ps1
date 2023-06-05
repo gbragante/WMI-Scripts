@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230601)"
+$version = "WMI-Collect (20230605)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -259,6 +259,7 @@ if (-not $Trace -and -not $Logs) {
     Write-Host "  -DCOM : OLE, COM and DCOM tracing"
     Write-Host "  -RPC : Remote Procedure Call"
     Write-Host "  -MDM : Mobile Device Manager"
+    Write-Host "  -Perf : WMIPerfClass, WMIPerfInst, PDH and PerfLib"
     Write-Host "  -RDMS : Remote Desktop Management"
     Write-Host "  -RDSPub : Remote Desktop Publishing"
     Write-Host "  -Network : Network capture"
