@@ -429,7 +429,11 @@ Write-Log "Listing members of Remote Management Users group"
 $name = Get-LocalGroupNameBySid "S-1-5-32-580"
 ("Group : " + $name) | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
 $members = Get-LocalGroupMembers $name
-$members | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
+if ($members) {
+  $members | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
+} else {
+  "<empty>" | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")  
+}
 "" | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
 
 Write-Log "Exporting Application log"
