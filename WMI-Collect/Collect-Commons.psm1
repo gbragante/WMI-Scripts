@@ -1,4 +1,4 @@
-# Collect-Commons 20230510
+# Collect-Commons 20230608
 
 Function Write-Log {
   param( [string] $msg )
@@ -58,6 +58,25 @@ Function Get-ProcBitness {
   } else {
     return ""
   }
+}
+
+Function Get-LocalGroupNameBySid {
+  param ($SIDString)
+
+  $group = New-Object System.Security.Principal.SecurityIdentifier($SIDString)
+
+  if ($group -ne $null) {
+    return $group.Translate([System.Security.Principal.NTAccount]).Value -replace '.+\\'
+  } else {
+    return $null
+  }
+}
+
+Function Get-LocalGroupMembers {
+  param ($name)
+  $ADSI = [ADSI]"WinNT://./$name,group"
+  $members = $ADSI.Invoke("Members") | foreach {$_.GetType().InvokeMember("Name", 'GetProperty', $null, $_, $null)}
+  return $members
 }
 
 Function GetOwnerCim{

@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230605)"
+$version = "WMI-Collect (20230608)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -425,9 +425,12 @@ Write-Log $cmd
 Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
 
 Write-Log "Listing members of Remote Management Users group"
-$cmd = "net localgroup ""Remote Management Users"" >>""" + $global:resDir + "\Groups.txt""" + $RdrErr
-Write-Log $cmd
-Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
+
+$name = Get-LocalGroupNameBySid "S-1-5-32-580"
+("Group : " + $name) | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
+$members = Get-LocalGroupMembers $name
+$members | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
+"" | Out-File -Append -FilePath ($global:resDir + "\Groups.txt")
 
 Write-Log "Exporting Application log"
 $cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $outfile + """ 2>>""" + $global:errfile + """"
