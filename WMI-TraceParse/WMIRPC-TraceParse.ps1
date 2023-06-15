@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230406
+# WMIRPC-TraceParse - 20230615
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -249,8 +249,7 @@ if ($FileName -eq "") {
 $KFileName = ""
 $bRPC = $false
 $fileobj = Get-Item $FileName
-if ($fileobj.Basename.ToLower().Contains("-trace")) {
-  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
+if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
   $PerfFileName = (Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName
 }
 
@@ -259,13 +258,35 @@ if (-not (Test-Path ($FileName))) {
   exit
 }
 
-if ($KFileName) {
+if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
+  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace("-trace-","-trace-kernel-") + ".txt"
   if (Test-Path ($KFileName)) {
     Write-Host ("Found Kernel trace at " + $KFileName)
     $Kernel = $true
   } else {
     Write-Host "Kernel trace not found"
     $Kernel = $false
+  }
+} elseif ($fileobj.Basename.ToLower().Contains("_uex_wmi")) {  # naming convention for TSSV2
+  if ($fileobj.Basename.ToLower().Contains("_uex_wmibase")) {
+    $repl = "_uex_wmibase"
+  } else {
+    $repl = "_uex_wmiadvanced"
+  }
+  $KFileName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace($repl,"_win_kernel") + ".txt"
+  if (Test-Path ($KFileName)) {
+    Write-Host ("Found Kernel trace at " + $KFileName)
+    $Kernel = $true
+  } else {
+    $repl += "trace-!fmt"
+    $KETLName = $fileobj.DirectoryName + "\" + $fileobj.Basename.ToLower().Replace($repl,"_win_kerneltrace") + ".etl"
+    if (Test-Path ($KETLName)) {
+      Write-Host "The Kernel trace $KETLName has been captured but it is not decoded"  
+      exit
+    } else {
+      Write-Host "Kernel trace not found"
+      $Kernel = $false
+    }
   }
 }
 
