@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20230608)"
+$version = "WMI-Collect (20230623)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -172,7 +172,12 @@ Function WMITraceCapture {
   }  
   if ($PerfMonWMIPrvSE) {
     #Invoke-CustomCommand ("Logman create counter 'WMI-Trace-PerfMonWMIPrvSE' -f bincirc -max 512 -c '\WMIPrvSE Health Status(*)\*' -si 00:00:01 -o '" + $TracesDir + "WMI-Trace-PerfMonWMIPrvSE-$env:COMPUTERNAME.blg'")
-    Invoke-CustomCommand ("Logman create counter 'WMI-Trace-PerfMonWMIPrvSE' -f bincirc -max 512 -c '\Process(WmiPrvSE*)\ID Process' '\Process(WmiPrvSE*)\Thread Count' '\Process(WmiPrvSE*)\Handle Count' '\Process(WmiPrvSE*)\Working Set' '\Process(WmiPrvSE*)\% Processor Time' -si 00:00:01 -o '" + $TracesDir + "WMI-Trace-PerfMonWMIPrvSE-$env:COMPUTERNAME.blg' -ow --v")
+    $utcOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
+    $sign = if ($utcOffset -ge 0) { '+' } else { '-' }
+    $utcOffset = [Math]::Abs($utcOffset)
+    $utcOffset = '-TZ{0}{1:000}' -f $sign, $utcOffset
+
+    Invoke-CustomCommand ("Logman create counter 'WMI-Trace-PerfMonWMIPrvSE' -f bincirc -max 512 -c '\Process(WmiPrvSE*)\ID Process' '\Process(WmiPrvSE*)\Thread Count' '\Process(WmiPrvSE*)\Handle Count' '\Process(WmiPrvSE*)\Working Set' '\Process(WmiPrvSE*)\% Processor Time' -si 00:00:01 -o '" + $TracesDir + "WMI-Trace-PerfMonWMIPrvSE-$env:COMPUTERNAME$utcOffset.blg' -ow --v")
     Invoke-CustomCommand ("logman start 'WMI-Trace-PerfMonWMIPrvSE'")
   }
 
