@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230615
+# WMIRPC-TraceParse - 20230623
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -250,7 +250,11 @@ $KFileName = ""
 $bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
-  $PerfFileName = (Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName
+  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()
+  $perfFileOffset = [int](FindSep -FindIn $PerfFileName.Substring($PerfFileName.Length-12) -Left "-tz" -Right ".blg")
+  $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
+  $perfOffset = $perfFileOffset - $machineOffset
+  Write-host ("Performance counters offset = " + $perfOffset + " minutes")
 }
 
 if (-not (Test-Path ($FileName))) {
@@ -702,7 +706,7 @@ if ($PerfWMIPrvSE) {
     $sample = $line.Replace('"', '').Split(",")
     Write-host $sample
     for ($cv = 1; $cv -le $nCol; $cv++) {
-      $dt = (ToTimeP $sample[0]).ToString("yyyyMMdd HHmmss")
+      $dt = ((ToTimeP $sample[0]).AddMinutes(-$perfOffset)).ToString("yyyyMMdd HHmmss")
       $Prov = FindSep -FindIn $header[$cv] -Left "(" -Right ")"
       $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       if (-not $aProvRow) {
