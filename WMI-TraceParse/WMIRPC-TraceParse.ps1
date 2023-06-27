@@ -307,6 +307,9 @@ if ($PerfFileName) {
   }
 }
 
+$file = Get-Item $FileName
+$diagFile = $file.DirectoryName + "\" + $file.BaseName + ".diag.txt"
+
 $htGUID = @{ "{e60c73e6-88f9-11cf-9af1-0020af6e72f4}" = "ILocalObjectExporter"; 
              "{4f32adc8-6052-4a04-8701-293ccf2096f0}" = "sspirpc";
              "{8a7b5006-cc13-11db-9705-005056c00008}" = "--";
@@ -763,18 +766,24 @@ foreach ($row in $tbEvt.Rows) {
   if ($row.Query.ToString() -ne "") {
     Write-Host $row.Time $row.operation $row.query
     if ($row.Operation -ne "Polling") {
-      $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
+      $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
+      ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+      $aProv = $tbProv.Select($qry)
       if ($aProv.Count -gt 0) {
         $row.HostID = $aProv[0].HostID
         $row.ProviderName = $aProv[0].ProviderName
       } else {
         $Class = FindClass $row.Query """"
-        $aProv = $tbProv.Select("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
+        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
+        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+        $aProv = $tbProv.Select($qry)
         if ($aProv.Count -gt 0) {
           $row.HostID = $aProv[0].HostID
           $row.ProviderName = $aProv[0].ProviderName
         } else {
-          $aProv = $tbProv.Select("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+          $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+          ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+          $aProv = $tbProv.Select($qry)
           if ($aProv.Count -gt 0) {
             $row.HostID = $aProv[0].HostID
             $row.ProviderName = $aProv[0].ProviderName
@@ -792,8 +801,9 @@ foreach ($row in $tbEvt.Rows) {
         $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
         $tStart = (ToTime $row.Time)
         $tEnd = $tstart.AddSeconds($duration / 1000)
-        $sel = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
-        $aPerf = $tbPerf.Select($sel)
+        $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
+        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+        $aPerf = $tbPerf.Select($qry)
         if ($aPerf) {
           $CPU = 0
           $Memory = 0
