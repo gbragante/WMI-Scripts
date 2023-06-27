@@ -2,7 +2,7 @@
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName = "E:\customers\2306011420001945-Schneider\20230621\WMI-Results-WTFRLVSE210037L-20230621_161758\Traces\WMI-Trace-WTFRLVSE210037L-!FMT.txt"
+  [string]$FileName
 )
 
 Function LineParam {
