@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20230623
+# WMIRPC-TraceParse - 20230627
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName
+  [string]$FileName = "E:\customers\2306011420001945-Schneider\20230621\WMI-Results-WTFRLVSE210037L-20230621_161758\Traces\WMI-Trace-WTFRLVSE210037L-!FMT.txt"
 )
 
 Function LineParam {
@@ -699,6 +699,22 @@ if ($PerfWMIPrvSE) {
   $headerLine = $sr.ReadLine()
 
   $header = $headerLine.Replace('"', '').Split(",")
+
+  if ($header -match "Processus") {
+    $prfName = @("% temps processeur"
+      "Nombre de threads"
+      "ID de processus"
+      "Nombre de handles"
+      "Plage de travail"
+    )
+  } else {
+    $prfName = @("Processor Time"
+      "Thread"
+      "ID Process"
+      "Handle"
+      "Working Set"
+    )
+  }
   $nCol = $header.Count -1
 
   $line = $sr.ReadLine()
@@ -716,15 +732,15 @@ if ($PerfWMIPrvSE) {
         $tbPerfTemp.Rows.Add($row)
         $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
       }      
-      if ($header[$cv] -match "Processor Time") {
+      if ($header[$cv] -match $prfName[0]) {
         $aProvRow[0].CPU = [int]$sample[$cv].Trim()
-      } elseif ($header[$cv] -match "Thread") {
+      } elseif ($header[$cv] -match $prfName[1]) {
         $aProvRow[0].Threads = $sample[$cv]
-      } elseif ($header[$cv] -match "ID Process") {
+      } elseif ($header[$cv] -match $prfName[2]) {
         $aProvRow[0].PID = $sample[$cv]
-      } elseif ($header[$cv] -match "Handle") {
+      } elseif ($header[$cv] -match $prfName[3]) {
         $aProvRow[0].Handles = $sample[$cv]
-      } elseif ($header[$cv] -match "Working Set") {
+      } elseif ($header[$cv] -match $prfName[4]) {
         $aProvRow[0].Memory = $sample[$cv]
       }
     }
