@@ -258,8 +258,8 @@ Function Parse-StopOperationID {
       } 
     }
     if ($PerfWMIPrvSE) {
-      if ($aOpId[0].HostID.GetType() -ne "DBNull") {
-        $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
+      if ($aOpId[0].HostID.GetType() -ne "DBNull") { #todo this check does not seem to work as expected
+        $duration = if ($aOpId[0].Duration -lt 1000) { 1000 } else { $aOpId[0].Duration }
         $tStart = (ToTime $aOpId[0].Time)
         $tEnd = $tstart.AddSeconds($duration / 1000)
         $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $aOpId[0].HostID + "'"
