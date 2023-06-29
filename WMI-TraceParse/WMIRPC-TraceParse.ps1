@@ -249,13 +249,40 @@ Function Parse-StopOperationID {
     $duration = New-TimeSpan -Start $dtStart -End $dtEnd    
     $aOpId[0].ResultCode = $ResultCode
     $aOpId[0].Duration = $duration.TotalMilliseconds
-    if ($aOpId[0].ProviderName.GetType() = "DBNull") {
+    if ($aOpId[0].ProviderName.GetType() -eq "DBNull") {
       $Class = FindClass $aOpID.Query "''"
       $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
       if ($aProv.Count -gt 0) { 
         $aOpId[0].HostID = $aProv[0].HostID
         $aOpId[0].ProviderName = $aProv[0].ProviderName
       } 
+    }
+    if ($PerfWMIPrvSE) {
+      if ($aOpId[0].HostID.GetType() -ne "DBNull") {
+        $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
+        $tStart = (ToTime $aOpId[0].Time)
+        $tEnd = $tstart.AddSeconds($duration / 1000)
+        $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $aOpId[0].HostID + "'"
+        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+        $aPerf = $tbPerf.Select($qry)
+        if ($aPerf) {
+          $CPU = 0
+          $Memory = 0
+          $Handles = 0
+          $Threads = 0
+          for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
+            $CPU+= $aPerf[$cv].CPU
+            $Memory+= $aPerf[$cv].Memory
+            $Threads+= $aPerf[$cv].Threads
+            $Handles+= $aPerf[$cv].Handles
+          }
+          $aOpId[0].CPU = ($CPU / $aPerf.Count)
+          #$row.CPU = $CPU  <==== it is better to provide the average or the sum for queries lasting longer than one second?
+          $aOpId[0].Memory = ($Memory / $aPerf.Count)
+          $aOpId[0].Threads = ($Threads / $aPerf.Count)
+          $aOpId[0].Handles = ($Handles / $aPerf.Count)
+        }
+      }
     }
   }
 }
@@ -330,6 +357,83 @@ Function ProcessKernelTrace {
   $srKernel.Close()
 
   $tbProc | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".processes.csv") -noType
+}
+
+Function ProcessBlg {
+  $tbPerfTemp = $tbPerf.Clone()
+
+  $sr = new-object System.io.streamreader(get-item $PerfFileName)
+  $headerLine = $sr.ReadLine()
+
+  $header = $headerLine.Replace('"', '').Split(",")
+
+  if ($header -match "Processus") {
+    $prfName = @("% temps processeur"
+      "Nombre de threads"
+      "ID de processus"
+      "Nombre de handles"
+      "Plage de travail"
+    )
+  } else {
+    $prfName = @("Processor Time"
+      "Thread"
+      "ID Process"
+      "Handle"
+      "Working Set"
+    )
+  }
+  $nCol = $header.Count -1
+
+  $line = $sr.ReadLine()
+  while (-not $sr.EndOfStream) {
+    $sample = $line.Replace('"', '').Split(",")
+    Write-host $sample
+    for ($cv = 1; $cv -le $nCol; $cv++) {
+      $dt = ((ToTimeP $sample[0]).AddMinutes(-$perfOffset)).ToString("yyyyMMdd HHmmss")
+      $Prov = FindSep -FindIn $header[$cv] -Left "(" -Right ")"
+      $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+      if (-not $aProvRow) {
+        $row = $tbPerfTemp.NewRow()
+        $row.Time = $dt
+        $row.Provider = $Prov
+        $tbPerfTemp.Rows.Add($row)
+        $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
+      }      
+      if ($header[$cv] -match $prfName[0]) {
+        $aProvRow[0].CPU = [int]$sample[$cv].Trim()
+      } elseif ($header[$cv] -match $prfName[1]) {
+        $aProvRow[0].Threads = $sample[$cv]
+      } elseif ($header[$cv] -match $prfName[2]) {
+        $aProvRow[0].PID = $sample[$cv]
+      } elseif ($header[$cv] -match $prfName[3]) {
+        $aProvRow[0].Handles = $sample[$cv]
+      } elseif ($header[$cv] -match $prfName[4]) {
+        $aProvRow[0].Memory = $sample[$cv]
+      }
+    }
+    foreach ($row in $tbPerfTemp.Rows) {
+      if ($row.PID -gt 0) {
+        $newRow = $tbPerf.NewRow()
+        foreach ($column in $tbPerfTemp.Columns) {
+          $newRow[$column.ColumnName] = $row[$column.ColumnName]
+        }
+        $tbPerf.Rows.Add($newRow)
+      }
+    }
+    $tbPerfTemp.Rows.Clear()
+    $line = $sr.ReadLine()
+  }  
+  $tbPerf | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".perf.csv") -noType
+}
+
+Function ExportTables {
+  $tmpNow = (get-date).ToString("yyyyMMdd-HHmmss")
+  $filesToDelete = Get-ChildItem -Path $fileobj.DirectoryName | Where-Object { $_.Name -like "*-tmpparse*" }
+  $filesToDelete | Remove-Item -Force -ErrorAction SilentlyContinue
+
+  $tbEvt | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".queries-tmpparse$tmpNow.csv") -noType
+  $tbProv | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".providers-tmpparse$tmpNow.csv") -noType
+  Write-Host ""
 }
 
 if ($FileName -eq "") {
@@ -605,15 +709,19 @@ $col = New-Object system.Data.DataColumn Threads,([string]); $tbPerf.Columns.Add
 
 $dtInit = Get-Date
 
-$stopwatch =  [system.diagnostics.stopwatch]::StartNew()
-$procbytes = 0
-$lastProgress = 0
-$totbytes = (get-item $FileName).Length
-
 if ($Kernel) {
   Write-Host "Processing Kernel trace"
   ProcessKernelTrace
 }
+
+if ($PerfWMIPrvSE) {
+  ProcessBlg
+}
+
+$stopwatch =  [system.diagnostics.stopwatch]::StartNew()
+$procbytes = 0
+$lastProgress = 0
+$totbytes = (get-item $FileName).Length
 
 $sr = new-object System.io.streamreader(get-item $FileName)
 $line = $sr.ReadLine()
@@ -742,8 +850,9 @@ while (-not $sr.EndOfStream) {
     $line = $sr.ReadLine()
     $procbytes += $line.Length
   }
-  if ($stopwatch.Elapsed.TotalSeconds - $lastProgress -gt 10) {
+  if ($stopwatch.Elapsed.TotalSeconds - $lastProgress -gt 120) {
     Write-Host ("====[ Progress: " + ($procbytes / $totbytes * 100) + " % ]====")
+    ExportTables
     $lastProgress = $stopwatch.Elapsed.TotalSeconds
   }
 }
@@ -760,146 +869,74 @@ if ($Kernel) {
   }
 }
 
-if ($PerfWMIPrvSE) {
-  $tbPerfTemp = $tbPerf.Clone()
-
-  $sr = new-object System.io.streamreader(get-item $PerfFileName)
-  $headerLine = $sr.ReadLine()
-
-  $header = $headerLine.Replace('"', '').Split(",")
-
-  if ($header -match "Processus") {
-    $prfName = @("% temps processeur"
-      "Nombre de threads"
-      "ID de processus"
-      "Nombre de handles"
-      "Plage de travail"
-    )
-  } else {
-    $prfName = @("Processor Time"
-      "Thread"
-      "ID Process"
-      "Handle"
-      "Working Set"
-    )
-  }
-  $nCol = $header.Count -1
-
-  $line = $sr.ReadLine()
-  while (-not $sr.EndOfStream) {
-    $sample = $line.Replace('"', '').Split(",")
-    Write-host $sample
-    for ($cv = 1; $cv -le $nCol; $cv++) {
-      $dt = ((ToTimeP $sample[0]).AddMinutes(-$perfOffset)).ToString("yyyyMMdd HHmmss")
-      $Prov = FindSep -FindIn $header[$cv] -Left "(" -Right ")"
-      $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
-      if (-not $aProvRow) {
-        $row = $tbPerfTemp.NewRow()
-        $row.Time = $dt
-        $row.Provider = $Prov
-        $tbPerfTemp.Rows.Add($row)
-        $aProvRow = $tbPerfTemp.Select("Time = '$dt' and Provider = '" + $Prov + "'")
-      }      
-      if ($header[$cv] -match $prfName[0]) {
-        $aProvRow[0].CPU = [int]$sample[$cv].Trim()
-      } elseif ($header[$cv] -match $prfName[1]) {
-        $aProvRow[0].Threads = $sample[$cv]
-      } elseif ($header[$cv] -match $prfName[2]) {
-        $aProvRow[0].PID = $sample[$cv]
-      } elseif ($header[$cv] -match $prfName[3]) {
-        $aProvRow[0].Handles = $sample[$cv]
-      } elseif ($header[$cv] -match $prfName[4]) {
-        $aProvRow[0].Memory = $sample[$cv]
-      }
-    }
-    foreach ($row in $tbPerfTemp.Rows) {
-      if ($row.PID -gt 0) {
-        $newRow = $tbPerf.NewRow()
-        foreach ($column in $tbPerfTemp.Columns) {
-          $newRow[$column.ColumnName] = $row[$column.ColumnName]
-        }
-        $tbPerf.Rows.Add($newRow)
-      }
-    }
-    $tbPerfTemp.Rows.Clear()
-    $line = $sr.ReadLine()
-  }  
-}
-
-Write-Host "Processing providers and process information"
-foreach ($row in $tbEvt.Rows) {
-  if ($row.Query.ToString() -ne "") {
-    Write-Host $row.Time $row.operation $row.query
-    if ($row.Operation -ne "Polling") {
-      if ($row.ProviderName.GetType() -eq "DBNull") {
-        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
-        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-        $aProv = $tbProv.Select($qry)
-        if ($aProv.Count -gt 0) {
-          $row.HostID = $aProv[0].HostID
-          $row.ProviderName = $aProv[0].ProviderName
-        } else {
-          $Class = FindClass $row.Query """"
-          $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
-          ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-          $aProv = $tbProv.Select($qry)
-          if ($aProv.Count -gt 0) {
-            $row.HostID = $aProv[0].HostID
-            $row.ProviderName = $aProv[0].ProviderName
-          } else {
-            $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
-            ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-            $aProv = $tbProv.Select($qry)
-            if ($aProv.Count -gt 0) {
-              $row.HostID = $aProv[0].HostID
-              $row.ProviderName = $aProv[0].ProviderName
-              $row.GroupOperationID = $aProv[0].GroupOperationID
-            }
-          }
-        }
-      }
-      if ($PerfWMIPrvSE) {
-        $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
-        $tStart = (ToTime $row.Time)
-        $tEnd = $tstart.AddSeconds($duration / 1000)
-        $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
-        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-        $aPerf = $tbPerf.Select($qry)
-        if ($aPerf) {
-          $CPU = 0
-          $Memory = 0
-          $Handles = 0
-          $Threads = 0
-          for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
-            $CPU+= $aPerf[$cv].CPU
-            $Memory+= $aPerf[$cv].Memory
-            $Threads+= $aPerf[$cv].Threads
-            $Handles+= $aPerf[$cv].Handles
-          }
-          $row.CPU = ($CPU / $aPerf.Count)
-          #$row.CPU = $CPU  <==== it is better to provide the average or the sum for queries lasting longer than one second?
-          $row.Memory = ($Memory / $aPerf.Count)
-          $row.Threads = ($Threads / $aPerf.Count)
-          $row.Handles = ($Handles / $aPerf.Count)
-        }
-      }
-    }
-  }
-}
+#Write-Host "Processing providers and process information"
+#foreach ($row in $tbEvt.Rows) {
+#  if ($row.Query.ToString() -ne "") {
+#    Write-Host $row.Time $row.operation $row.query
+#    if ($row.Operation -ne "Polling") {
+#      if ($row.ProviderName.GetType() -eq "DBNull") {
+#        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
+#        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+#        $aProv = $tbProv.Select($qry)
+#        if ($aProv.Count -gt 0) {
+#          $row.HostID = $aProv[0].HostID
+#          $row.ProviderName = $aProv[0].ProviderName
+#        } else {
+#          $Class = FindClass $row.Query """"
+#          $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
+#          ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+#          $aProv = $tbProv.Select($qry)
+#          if ($aProv.Count -gt 0) {
+#            $row.HostID = $aProv[0].HostID
+#            $row.ProviderName = $aProv[0].ProviderName
+#          } else {
+#            $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+#            ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+#            $aProv = $tbProv.Select($qry)
+#            if ($aProv.Count -gt 0) {
+#              $row.HostID = $aProv[0].HostID
+#              $row.ProviderName = $aProv[0].ProviderName
+#              $row.GroupOperationID = $aProv[0].GroupOperationID
+#            }
+#          }
+#        }
+#      }
+#      #if ($PerfWMIPrvSE) {
+#      #  $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
+#      #  $tStart = (ToTime $row.Time)
+#      #  $tEnd = $tstart.AddSeconds($duration / 1000)
+#      #  $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
+#      #  ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+#      #  $aPerf = $tbPerf.Select($qry)
+#      #  if ($aPerf) {
+#      #    $CPU = 0
+#      #    $Memory = 0
+#      #    $Handles = 0
+#      #    $Threads = 0
+#      #    for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
+#      #      $CPU+= $aPerf[$cv].CPU
+#      #      $Memory+= $aPerf[$cv].Memory
+#      #      $Threads+= $aPerf[$cv].Threads
+#      #      $Handles+= $aPerf[$cv].Handles
+#      #    }
+#      #    $row.CPU = ($CPU / $aPerf.Count)
+#      #    #$row.CPU = $CPU  <==== it is better to provide the average or the sum for queries lasting longer than one second?
+#      #    $row.Memory = ($Memory / $aPerf.Count)
+#      #    $row.Threads = ($Threads / $aPerf.Count)
+#      #    $row.Handles = ($Handles / $aPerf.Count)
+#      #  }
+#      #}
+#    }
+#  }
+#}
 
 $file = Get-Item $FileName
 $tbEvt | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".queries.csv") -noType
 $tbProv | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".providers.csv") -noType
-$tbProc | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".processes.csv") -noType
 
 if ($bRPC) {
   $tbRPC | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".RPCEvents.csv") -noType
 }
 
-if ($PerfWMIPrvSE) {
-  $tbPerf | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".perf.csv") -noType
-}
-
 $duration = New-TimeSpan -Start $dtInit -End (Get-Date)
 Write-Host "Execution completed in" $duration.TotalSeconds "seconds"
-
