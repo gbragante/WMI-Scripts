@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230628
+# WMIRPC-TraceParse - 20230629
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -110,16 +110,30 @@ Function Parse-ProviderInfo {
   $row.Time = $time
   $row.GroupOperationID = FindSep -FindIn $part -Left "GroupOperationId = " -Right ";"
   $row.Operation = FindSep -FindIn $part -Left "Operation = Provider::" -Right " - "
-  $Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
+  $Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "  # this is not really the namespace, this information is not always logged. most of the time is the class name
   $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($Namespace + " : ") -Right "; ").ToLower()        
-  $row.Class = FindClass $row.Query "''"
-  $row.HostID = FindSep -FindIn $part -Left "HostID = " -Right ";"
-  $row.ProviderName = FindSep -FindIn $part -Left "ProviderName = " -Right ";"
+  $Class = FindClass $row.Query "''"
+  $row.Class = $Class
+  $HostID = FindSep -FindIn $part -Left "HostID = " -Right ";"
+  $row.HostID = $HostID
+  $ProviderName = FindSep -FindIn $part -Left "ProviderName = " -Right ";"
+  $row.ProviderName = $ProviderName
   $row.ProviderGuid = FindSep -FindIn $part -Left "ProviderGuid = " -Right ";"
   $row.Path = FindSep -FindIn $part -Left "Path = " -Right ";"
   $tbProv.Rows.Add($row)
   Write-Host $part          
   #todo: add class/hostID to tbProvClass. Find by class/namespace and overwrite each time
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $aProv[0].HostID = $HostID
+    $aProv[0].ProviderName = $ProviderName
+  } else {
+    $row = $tbProvClass.NewRow()    
+    $row.Class = $Class
+    $row.HostID = $HostID
+    $row.ProviderName = $ProviderName
+    $tbProvClass.Rows.Add($row)
+  }
 }
 
 Function Parse-ProviderStarted {
@@ -157,17 +171,29 @@ Function Parse-Query {
   $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
   $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
-  #todo: resolve HostID and provider from tbProvClass
+  if ($Kernel) {
+    $aProc = $tbProc.Select("PID = " + $row.ClientPID + " and Stop > '" + $row.Time + "'")
+    if ($aProc.Count -gt 0) {
+      $row.Process = $aProc[$aProc.Count-1].FileName
+    }
+  }
   if ($part -match  "MethodName =") {
     $row.Namespace = FindSep -FindIn $part -Left "NamespaceName = " -Right " {"
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "ClassName= " -Right ";").ToLower()
-    $row.Class = FindClass $row.Query "''"  # temporary
+    $Class = FindClass $row.Query "''" 
     $row.Operation = FindSep -FindIn $part -Left "MethodName = " -Right ";"
   } else {
     $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
     $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
-    $row.Class = FindClass $row.Query "''"  # temporary
+    $Class = FindClass $row.Query "''" 
+  }
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $row.HostID = $aProv[0].HostID
+    $row.ProviderName = $aProv[0].ProviderName
+  } else {
+    Write-Host "Class $Class not found"
   }
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
@@ -183,18 +209,31 @@ Function Parse-Query_ {
   $row.ClientMachine = FindSep -FindIn $part -Left "ClientMachine = " -Right ";"
   $row.User = FindSep -FindIn $part -Left "User = " -Right ";"
   $row.ClientPID = FindSep -FindIn $part -Left "ClientProcessId = " -Right ";"
-
+  if ($Kernel) {
+    $aProc = $tbProc.Select("PID = " + $row.ClientPID + " and Stop > '" + $row.Time + "'")
+    if ($aProc.Count -gt 0) {
+      $row.Process = $aProc[$aProc.Count-1].FileName
+    }
+  }
   if ($part -match  "MethodName =") {
     $row.Namespace = FindSep -FindIn $part -Left "NamespaceName = " -Right "  {"
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "ClassName= " -Right ";").ToLower()
-    $row.Class = FindClass $row.Query "''"  # temporary
+    $Class = FindClass $row.Query "''" 
     $row.Operation = FindSep -FindIn $part -Left "MethodName = " -Right ";"
   } else {
     $row.Operation = FindSep -FindIn $part -Left "Start IWbemServices::" -Right " - "
     $row.Namespace = FindSep -FindIn $part -Left ($row.Operation + " - ") -Right " : "
     $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left ($row.Namespace + " : ") -Right "; ").ToLower()
-    $row.Class = FindClass $row.Query "''"  # temporary
+    $Class = FindClass $row.Query "''"
   }
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $row.HostID = $aProv[0].HostID
+    $row.ProviderName = $aProv[0].ProviderName
+  } else {
+    Write-Host "Class $Class not found"
+  }
+
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
@@ -210,7 +249,15 @@ Function Parse-StopOperationID {
     $duration = New-TimeSpan -Start $dtStart -End $dtEnd    
     $aOpId[0].ResultCode = $ResultCode
     $aOpId[0].Duration = $duration.TotalMilliseconds
-  } 
+    if ($aOpId[0].ProviderName.GetType() = "DBNull") {
+      $Class = FindClass $aOpID.Query "''"
+      $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+      if ($aProv.Count -gt 0) { 
+        $aOpId[0].HostID = $aProv[0].HostID
+        $aOpId[0].ProviderName = $aProv[0].ProviderName
+      } 
+    }
+  }
 }
 
 Function Parse-ProviderQuery {
@@ -244,6 +291,45 @@ Function Parse-Polling {
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
+}
+
+Function ProcessKernelTrace {
+  $srKernel = new-object System.io.streamreader(get-item $KFileName)
+  $line = $srKernel.ReadLine()
+  while (-not $srKernel.EndOfStream) {
+    $npos = $line.IndexOf("::")
+    if ($nPos -gt 0) {
+      $time = ($line.Substring($nPos + 2 , 25))
+
+      if (($line -match "Process - DCStart") -or ($line -match "Process - Start")) {
+        $row = $tbProc.NewRow()
+        $row.Start = $time
+        $row.PID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")
+        $row.Parent = [int32](FindSep -FindIn $line -Left "ParentId=" -Right ",")
+        $row.SessionId = FindSep -FindIn $line -Left "SessionId=" -Right ","
+        $row.User = (FindSep -FindIn $line -Left "UserSID=" -Right ",").Replace("\\","")
+        $row.FileName= (FindSep -FindIn $line -Left "FileName=" -Right ",")
+        $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\??\","")
+        $tbProc.Rows.Add($row)
+        Write-host $line
+      }
+
+      if (($line -match "Process - End") -or ($line -match "Process - DCEnd")) {
+        $ProcID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")    
+        $aProc = $tbProc.Select("PID = " + $ProcID)
+        if ($aProc.Count -gt 0) {
+          $aProc[$aProc.Count-1].Stop = $time
+          if ($line -match "Process - End") {
+            $aProc[$aProc.Count-1].ExitStatus = (FindSep -FindIn $line -Left "ExitStatus=" -Right ",")
+          }
+        }
+      }
+    }
+    $line = $srKernel.ReadLine()
+  }
+  $srKernel.Close()
+
+  $tbProc | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".processes.csv") -noType
 }
 
 if ($FileName -eq "") {
@@ -442,7 +528,6 @@ if ($Kernel) {
 $col = New-Object system.Data.DataColumn Namespace,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Operation,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Query,([string]); $tbEvt.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Class,([string]); $tbEvt.Columns.Add($col)   # Temporary column, I woud like to see if it contains the right information
 $col = New-Object system.Data.DataColumn Duration,([int32]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ResultCode,([string]); $tbEvt.Columns.Add($col)
 $col = New-Object system.Data.DataColumn PossibleCause,([string]); $tbEvt.Columns.Add($col)
@@ -473,7 +558,6 @@ $col = New-Object system.Data.DataColumn ProviderGuid,([string]); $tbProv.Column
 $col = New-Object system.Data.DataColumn Path,([string]); $tbProv.Columns.Add($col)
 
 $tbProvClass = New-Object system.Data.DataTable
-$col = New-Object system.Data.DataColumn Time,([string]); $tbProvClass.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Class,([string]); $tbProvClass.Columns.Add($col)
 $col = New-Object system.Data.DataColumn ProviderName,([string]); $tbProvClass.Columns.Add($col)
 $col = New-Object system.Data.DataColumn HostID,([int32]); $tbProvClass.Columns.Add($col)
@@ -525,6 +609,11 @@ $stopwatch =  [system.diagnostics.stopwatch]::StartNew()
 $procbytes = 0
 $lastProgress = 0
 $totbytes = (get-item $FileName).Length
+
+if ($Kernel) {
+  Write-Host "Processing Kernel trace"
+  ProcessKernelTrace
+}
 
 $sr = new-object System.io.streamreader(get-item $FileName)
 $line = $sr.ReadLine()
@@ -661,42 +750,6 @@ while (-not $sr.EndOfStream) {
 $sr.Close()
 
 if ($Kernel) {
-  Write-Host "Processing Kernel trace"
-  $sr = new-object System.io.streamreader(get-item $KFileName)
-  $line = $sr.ReadLine()
-  while (-not $sr.EndOfStream) {
-    $npos = $line.IndexOf("::")
-    if ($nPos -gt 0) {
-      $time = ($line.Substring($nPos + 2 , 25))
-
-      if (($line -match "Process - DCStart") -or ($line -match "Process - Start")) {
-        $row = $tbProc.NewRow()
-        $row.Start = $time
-        $row.PID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")
-        $row.Parent = [int32](FindSep -FindIn $line -Left "ParentId=" -Right ",")
-        $row.SessionId = FindSep -FindIn $line -Left "SessionId=" -Right ","
-        $row.User = (FindSep -FindIn $line -Left "UserSID=" -Right ",").Replace("\\","")
-        $row.FileName= (FindSep -FindIn $line -Left "FileName=" -Right ",")
-        $row.CommandLine = (FindSep -FindIn $line -Left "CommandLine=" -Right ",").Replace("\??\","")
-        $tbProc.Rows.Add($row)
-        Write-host $line
-      }
-
-      if (($line -match "Process - End") -or ($line -match "Process - DCEnd")) {
-        $ProcID = [int32](FindSep -FindIn $line -Left "ProcessId=" -Right ",")    
-        $aProc = $tbProc.Select("PID = " + $ProcID)
-        if ($aProc.Count -gt 0) {
-          $aProc[$aProc.Count-1].Stop = $time
-          if ($line -match "Process - End") {
-            $aProc[$aProc.Count-1].ExitStatus = (FindSep -FindIn $line -Left "ExitStatus=" -Right ",")
-          }
-        }
-      }
-    }
-    $line = $sr.ReadLine()
-  }
-  $sr.Close()
-
   Write-Host "Decoding process in the RPC events"
   foreach ($row in $tbRPC.Rows) {
     Write-Host $row.Time $row.Side $row.InterfaceUuid
@@ -778,35 +831,31 @@ foreach ($row in $tbEvt.Rows) {
   if ($row.Query.ToString() -ne "") {
     Write-Host $row.Time $row.operation $row.query
     if ($row.Operation -ne "Polling") {
-      $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
-      ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-      $aProv = $tbProv.Select($qry)
-      if ($aProv.Count -gt 0) {
-        $row.HostID = $aProv[0].HostID
-        $row.ProviderName = $aProv[0].ProviderName
-      } else {
-        $Class = FindClass $row.Query """"
-        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
+      if ($row.ProviderName.GetType() -eq "DBNull") {
+        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
         ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
         $aProv = $tbProv.Select($qry)
         if ($aProv.Count -gt 0) {
           $row.HostID = $aProv[0].HostID
           $row.ProviderName = $aProv[0].ProviderName
         } else {
-          $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+          $Class = FindClass $row.Query """"
+          $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
           ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
           $aProv = $tbProv.Select($qry)
           if ($aProv.Count -gt 0) {
             $row.HostID = $aProv[0].HostID
             $row.ProviderName = $aProv[0].ProviderName
-            $row.GroupOperationID = $aProv[0].GroupOperationID
+          } else {
+            $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
+            ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+            $aProv = $tbProv.Select($qry)
+            if ($aProv.Count -gt 0) {
+              $row.HostID = $aProv[0].HostID
+              $row.ProviderName = $aProv[0].ProviderName
+              $row.GroupOperationID = $aProv[0].GroupOperationID
+            }
           }
-        }
-      }
-      if ($Kernel) {
-        $aProc = $tbProc.Select("PID = " + $row.ClientPID + " and Stop > '" + $row.Time + "'")
-        if ($aProc.Count -gt 0) {
-          $row.Process = $aProc[$aProc.Count-1].FileName
         }
       }
       if ($PerfWMIPrvSE) {
