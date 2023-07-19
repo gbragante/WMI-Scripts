@@ -2,7 +2,8 @@
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName = "E:\customers\Lab\20230719-WMI-TraceParse\WMI-Results-GBRAG-P1-20230719_115921\Traces\WMI-Trace-GBRAG-P1-!FMT.txt"
+  [string] $FileName,
+  [switch] $SkipRpc
 )
 
 Function LineParam {
@@ -122,7 +123,6 @@ Function Parse-ProviderInfo {
   $row.Path = FindSep -FindIn $part -Left "Path = " -Right ";"
   $tbProv.Rows.Add($row)
   Write-Host $part          
-  #todo: add class/hostID to tbProvClass. Find by class/namespace and overwrite each time
   $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
   if ($aProv.Count -gt 0) { 
     $aProv[0].HostID = $HostID
@@ -258,12 +258,12 @@ Function Parse-StopOperationID {
       } 
     }
     if ($PerfWMIPrvSE) {
-      if ($aOpId[0].HostID.GetType() -ne "DBNull") { #todo this check does not seem to work as expected
+      if ($aOpId[0].HostID.GetType().Name -ne "DBNull") {
         $duration = if ($aOpId[0].Duration -lt 1000) { 1000 } else { $aOpId[0].Duration }
         $tStart = (ToTime $aOpId[0].Time)
         $tEnd = $tstart.AddSeconds($duration / 1000)
         $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $aOpId[0].HostID + "'"
-        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
+        # ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
         $aPerf = $tbPerf.Select($qry)
         if ($aPerf) {
           $CPU = 0
@@ -807,7 +807,7 @@ while (-not $sr.EndOfStream) {
     Parse-Polling
   }
 
-  if ($part -match  "\[Debug \]" -or $part -match  "\[Debug17 \]") { 
+  if (-not $SkipRpc -and $part -match  "\[Debug \]" -or $part -match  "\[Debug17 \]") { 
     $bRPC = $True
     $LP = LineParam
     if ($part -match  "RPC call started") {
