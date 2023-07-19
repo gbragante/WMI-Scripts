@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20230629
+# WMIRPC-TraceParse - 20230719
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string]$FileName = "E:\customers\Lab\20230628-WMI-TraceParse\wmi-trace-gbrag-p1-!FMT.txt"
+  [string]$FileName = "E:\customers\Lab\20230719-WMI-TraceParse\WMI-Results-GBRAG-P1-20230719_115921\Traces\WMI-Trace-GBRAG-P1-!FMT.txt"
 )
 
 Function LineParam {
@@ -426,14 +426,21 @@ Function ProcessBlg {
   $tbPerf | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".perf.csv") -noType
 }
 
-Function ExportTables {
+Function ExportTmpTables {
   $tmpNow = (get-date).ToString("yyyyMMdd-HHmmss")
-  $filesToDelete = Get-ChildItem -Path $fileobj.DirectoryName | Where-Object { $_.Name -like "*-tmpparse*" }
-  $filesToDelete | Remove-Item -Force -ErrorAction SilentlyContinue
-
+  DeleteTmpTables
   $tbEvt | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".queries-tmpparse$tmpNow.csv") -noType
   $tbProv | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".providers-tmpparse$tmpNow.csv") -noType
+
+  if ($bRPC) {
+    $tbRPC | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".RPCEvents-tmpparse$tmpNow.csv") -noType
+  }
   Write-Host ""
+}
+
+Function DeleteTmpTables {
+  $filesToDelete = Get-ChildItem -Path $fileobj.DirectoryName | Where-Object { $_.Name -like "*-tmpparse*" }
+  $filesToDelete | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 if ($FileName -eq "") {
@@ -825,6 +832,14 @@ while (-not $sr.EndOfStream) {
       $row.AuthenticationLevel = FindSep -FindIn $part -Left "Authentication Level `t" -Right " "
       $row.AuthenticationService = FindSep -FindIn $part -Left "Authentication Service `t" -Right " "
       $row.ImpersonationLevel = FindSep -FindIn $part -Left "Impersonation Level `t" -Right " "
+
+      if ($Kernel) {
+        $aProc = $tbProc.Select("PID = " + $row.PID + " and Stop > '" + $row.Time + "'")
+        if ($aProc.Count -gt 0) {
+          $row.Process = $aProc[$aProc.Count-1].FileName
+        }
+      }
+
       $tbRPC.Rows.Add($row)
     }
 
@@ -852,90 +867,19 @@ while (-not $sr.EndOfStream) {
   }
   if ($stopwatch.Elapsed.TotalSeconds - $lastProgress -gt 120) {
     Write-Host ("====[ Progress: " + ($procbytes / $totbytes * 100) + " % ]====")
-    ExportTables
+    ExportTmpTables
     $lastProgress = $stopwatch.Elapsed.TotalSeconds
   }
 }
 $sr.Close()
 
-if ($Kernel) {
-  Write-Host "Decoding process in the RPC events"
-  foreach ($row in $tbRPC.Rows) {
-    Write-Host $row.Time $row.Side $row.InterfaceUuid
-    $aProc = $tbProc.Select("PID = " + $row.PID + " and Stop > '" + $row.Time + "'")
-    if ($aProc.Count -gt 0) {
-      $row.Process = $aProc[$aProc.Count-1].FileName
-    }
-  }
-}
+$tbEvt | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".queries.csv") -noType
+$tbProv | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".providers.csv") -noType
 
-#Write-Host "Processing providers and process information"
-#foreach ($row in $tbEvt.Rows) {
-#  if ($row.Query.ToString() -ne "") {
-#    Write-Host $row.Time $row.operation $row.query
-#    if ($row.Operation -ne "Polling") {
-#      if ($row.ProviderName.GetType() -eq "DBNull") {
-#        $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Query = '" + $row.Query.Replace("'","""") + "' and time >='" + $row.Time + "'")
-#        ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-#        $aProv = $tbProv.Select($qry)
-#        if ($aProv.Count -gt 0) {
-#          $row.HostID = $aProv[0].HostID
-#          $row.ProviderName = $aProv[0].ProviderName
-#        } else {
-#          $Class = FindClass $row.Query """"
-#          $qry = ("GroupOperationID = '" + $row.GroupOperationID + "' and Class = '" + $Class + "' and time >='" + $row.Time + "'")
-#          ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-#          $aProv = $tbProv.Select($qry)
-#          if ($aProv.Count -gt 0) {
-#            $row.HostID = $aProv[0].HostID
-#            $row.ProviderName = $aProv[0].ProviderName
-#          } else {
-#            $qry = ("Class = '" + $Class + "' and time >='" + $row.Time + "'")
-#            ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbProv " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-#            $aProv = $tbProv.Select($qry)
-#            if ($aProv.Count -gt 0) {
-#              $row.HostID = $aProv[0].HostID
-#              $row.ProviderName = $aProv[0].ProviderName
-#              $row.GroupOperationID = $aProv[0].GroupOperationID
-#            }
-#          }
-#        }
-#      }
-#      #if ($PerfWMIPrvSE) {
-#      #  $duration = if ($row.Duration -lt 1000) { 1000 } else { $row.Duration }
-#      #  $tStart = (ToTime $row.Time)
-#      #  $tEnd = $tstart.AddSeconds($duration / 1000)
-#      #  $qry = "Time >= '" + $tStart.ToString("20yyMMdd HHmmss") + "' and Time <= '" + $tEnd.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
-#      #  ((get-date).ToString("yyyyMMdd HH:mm:ss.fff") + " tbPerf " + $qry) | Out-File -FilePath $diagFile -Append  # diagperf
-#      #  $aPerf = $tbPerf.Select($qry)
-#      #  if ($aPerf) {
-#      #    $CPU = 0
-#      #    $Memory = 0
-#      #    $Handles = 0
-#      #    $Threads = 0
-#      #    for ($cv = 0; $cv -le $aPerf.Count-1; $cv++) {
-#      #      $CPU+= $aPerf[$cv].CPU
-#      #      $Memory+= $aPerf[$cv].Memory
-#      #      $Threads+= $aPerf[$cv].Threads
-#      #      $Handles+= $aPerf[$cv].Handles
-#      #    }
-#      #    $row.CPU = ($CPU / $aPerf.Count)
-#      #    #$row.CPU = $CPU  <==== it is better to provide the average or the sum for queries lasting longer than one second?
-#      #    $row.Memory = ($Memory / $aPerf.Count)
-#      #    $row.Threads = ($Threads / $aPerf.Count)
-#      #    $row.Handles = ($Handles / $aPerf.Count)
-#      #  }
-#      #}
-#    }
-#  }
-#}
-
-$file = Get-Item $FileName
-$tbEvt | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".queries.csv") -noType
-$tbProv | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".providers.csv") -noType
+DeleteTmpTables
 
 if ($bRPC) {
-  $tbRPC | Export-Csv ($file.DirectoryName + "\" + $file.BaseName + ".RPCEvents.csv") -noType
+  $tbRPC | Export-Csv ($file.DirectoryName + "\" + $fileobj.BaseName + ".RPCEvents.csv") -noType
 }
 
 $duration = New-TimeSpan -Start $dtInit -End (Get-Date)
