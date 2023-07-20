@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230719
+# WMIRPC-TraceParse - 20230720
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -249,7 +249,7 @@ Function Parse-StopOperationID {
     $duration = New-TimeSpan -Start $dtStart -End $dtEnd    
     $aOpId[0].ResultCode = $ResultCode
     $aOpId[0].Duration = $duration.TotalMilliseconds
-    if ($aOpId[0].ProviderName.GetType() -eq "DBNull") {
+    if ($aOpId[0].ProviderName.GetType().Name -eq "DBNull") {
       $Class = FindClass $aOpID.Query "''"
       $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
       if ($aProv.Count -gt 0) { 
@@ -452,12 +452,19 @@ $KFileName = ""
 $bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
-  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()
-  $perfFileOffset = [int](FindSep -FindIn $PerfFileName.Substring($PerfFileName.Length-12) -Left "-tz" -Right ".blg")
-  $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
-  $perfOffset = $perfFileOffset - $machineOffset
-  Write-host ("Performance counters offset = " + $perfOffset + " minutes")
+  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()  # WMI-Collect naming convention
+  if (Test-Path($PerfFileName)) {
+    $perfFileOffset = [int](FindSep -FindIn $PerfFileName.Substring($PerfFileName.Length-12) -Left "-tz" -Right ".blg")
+  }
+} else {
+  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*_PerfMon_UEX_WMIPrvSE_*.blg")).FullName).ToLower()  # TSS naming convention
+  if (Test-Path($PerfFileName)) {
+    $perfFileOffset = [int](FindSep -FindIn $PerfFileName -Left "_tz" -Right "_")
+  }
 }
+$machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
+$perfOffset = $perfFileOffset - $machineOffset
+Write-host ("Performance counters offset = " + $perfOffset + " minutes")
 
 if (-not (Test-Path ($FileName))) {
   Write-Host "WMI trace not found"
