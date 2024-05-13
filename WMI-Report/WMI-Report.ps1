@@ -1,4 +1,4 @@
-# WMI-Report (20230420)
+# WMI-Report (20240513)
 # by Gianni Bragante gbrag@microsoft.com
 
 param( [string]$DataPath, [switch]$AcceptEula )
@@ -390,7 +390,7 @@ if ($DataPath) {
     Write-Host "The folder $DataPath does not exist"
     exit
   }
-  $global:resDir = $DataPath
+  $global:resDir = $DataPath + "\" + $resName
 } else {
   $global:resDir = $global:Root + "\" + $resName
 }
@@ -399,7 +399,7 @@ New-Item -itemtype directory -path $global:resDir | Out-Null
 
 New-PSDrive -PSProvider registry -Root HKEY_CLASSES_ROOT -Name HKCR | Out-Null
 
-$tbProv = New-Object system.Data.DataTable “WmiProv”
+$tbProv = New-Object system.Data.DataTable "WmiProv"
 $col = New-Object system.Data.DataColumn NameSpace,([string])
 $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
@@ -419,7 +419,7 @@ $tbProv.Columns.Add($col)
 $col = New-Object system.Data.DataColumn CLSID,([string])
 $tbProv.Columns.Add($col)
 
-$tbDyn = New-Object system.Data.DataTable “Classes”
+$tbDyn = New-Object system.Data.DataTable "Classes"
 $col = New-Object system.Data.DataColumn NameSpace,([string])
 $tbDyn.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
@@ -427,7 +427,7 @@ $tbDyn.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Provider,([string])
 $tbDyn.Columns.Add($col)
 
-$tbStatic = New-Object system.Data.DataTable “Repository”
+$tbStatic = New-Object system.Data.DataTable "Repository"
 $col = New-Object system.Data.DataColumn NameSpace,([string])
 $tbStatic.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Name,([string])
@@ -437,7 +437,7 @@ $tbStatic.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Size,([Int64])
 $tbStatic.Columns.Add($col)
 
-$tbSec = New-Object system.Data.DataTable “Security”
+$tbSec = New-Object system.Data.DataTable "Security"
 $col = New-Object system.Data.DataColumn NameSpace,([string])
 $tbSec.Columns.Add($col)
 $col = New-Object system.Data.DataColumn Security,([string])
