@@ -1,20 +1,32 @@
-param( [string]$DataPath, `
-       [switch]$AcceptEula, `
-       [switch]$Logs, `
-       [switch]$Trace, `
-       [string]$StartAt, `
-       [string]$Duration
-     )
+param( 
+  [string]$DataPath,
+  [switch]$AcceptEula,
+  [switch]$Logs,
+  [switch]$Trace,
+  [string]$StartAt,
+  [string]$Duration,
+  [switch]$Auth
+)
 
-$version = "Sched-Collect (20230529)"
-# by Gianni Bragante - gbrag@microsoft.com
+$version = "Sched-Collect (20231031)"
+<# 
+  Created by Gianni Bragante - gbrag@microsoft.com
+
+  Updates:
+      2023-10-31 Marius Porcolean (maporcol@microsoft.com)
+          - Added new flag parameter -Auth
+          - This new parameter adds authentication related tracing providers to the main trace
+          - A bunch of automatic cosmetic/formatting changes (spaces, lines, etc)
+
+#>
 
 Function SchedTraceCapture {
   if ($DateStart) {
     $diff = New-TimeSpan -Start (Get-Date) -End $DateStart # Recalculating the difference because the user may have been taking time to read the EULA
     if ($diff.TotalSeconds -lt 0) {
       $waitSeconds = 0
-    } else {
+    }
+    else {
       $waitSeconds = [int]$diff.TotalSeconds
     }
     Write-Log ("Waiting " + $waitSeconds + " seconds until $DateStart")
@@ -36,11 +48,30 @@ Function SchedTraceCapture {
   Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{B6BFCC79-A3AF-4089-8D4D-0EECB1B80779}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-SystemEventsBroker
   Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{E6835967-E0D2-41FB-BCEC-58387404E25A}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-BrokerInfrastructure
 
+  if ($Auth) {
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{199FE037-2B82-40A9-82AC-E1D46C792B99}' 0xffffffffffffffff 0xff -ets" # LsaSrv
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{CC85922F-DB41-11D2-9244-006008269001}' 0xffffffffffffffff 0xff -ets" # Local Security Authority (LSA)
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{4D9DFB91-4337-465A-A8B5-05A27D930D48}' 0xffffffffffffffff 0xff -ets" # LsaSrvTraceLogger
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{A4E69072-8572-4669-96B7-8DB1520FC93A}' 0xffffffffffffffff 0xff -ets" # LsaIsoTraceProv
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{366B218A-A5AA-4096-8131-0BDAFCC90E93}' 0xffffffffffffffff 0xff -ets" # LsaIsoTraceControlGuid
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{1F678132-5938-4686-9FDC-C8FF68F15C85}' 0xffffffffffffffff 0xff -ets" # Schannel
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{37D2C3CD-C5D4-4587-8531-4696C44244C8}' 0xffffffffffffffff 0xff -ets" # Security: SChannel
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{DDDC1D91-51A1-4A8D-95B5-350C4EE3D809}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-AuthenticationProvider
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{6B510852-3583-4E2D-AFFE-A67F9F223438}' 0xffffffffffffffff 0xff -ets" # Security: Kerberos Authentication
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{BBA3ADD2-C229-4CDB-AE2B-57EB6966B0C4}' 0xffffffffffffffff 0xff -ets" # Active Directory: Kerberos Client
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{98E6CFCB-EE0A-41E0-A57B-622D4E1B30B1}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-Security-Kerberos
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{6165F3E2-AE38-45D4-9B23-6B4818758BD9}' 0xffffffffffffffff 0xff -ets" # Security: TSPkg
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{AC43300D-5FCC-4800-8E99-1BD3F85F0320}' 0xffffffffffffffff 0xff -ets" # Microsoft-Windows-NTLM
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{C92CF544-91B3-4DC0-8E11-C580339A0BF8}' 0xffffffffffffffff 0xff -ets" # NTLM Security Protocol
+    Invoke-CustomCommand "logman update trace 'Sched-Trace' -p '{5BBB6C18-AA45-49B1-A15F-085F7ED0AA90}' 0xffffffffffffffff 0xff -ets" # Security: NTLM Authentication
+  }
+
   Write-Log "Trace capture started"
   if ($Duration) {
     Write-Log ("The capture will be stopped in " + $durSec + " seconds")
     Start-Sleep $durSec
-  } else {
+  }
+  else {
     read-host "Press ENTER to stop the capture"
   }
   Invoke-CustomCommand "logman stop 'Sched-Trace' -ets"  
@@ -56,7 +87,7 @@ if (-not $myWindowsPrincipal.IsInRole($adminRole)) {
 }
 
 $global:Root = Split-Path (Get-Variable MyInvocation).Value.MyCommand.Path
-$resName = "Sched-Results-" + $env:computername +"-" + $(get-date -f yyyyMMdd_HHmmss)
+$resName = "Sched-Results-" + $env:computername + "-" + $(get-date -f yyyyMMdd_HHmmss)
 
 if ($DataPath) {
   if (-not (Test-Path $DataPath)) {
@@ -64,34 +95,36 @@ if ($DataPath) {
     exit
   }
   $global:resDir = $DataPath + "\" + $resName
-} else {
+}
+else {
   $global:resDir = $global:Root + "\" + $resName
 }
 
 Import-Module ($global:Root + "\Collect-Commons.psm1") -Force -DisableNameChecking
 
 if (-not $Trace -and -not $Logs) {
-    Write-Host "$version, a data collection tool for Task Scheduler troubleshooting"
-    Write-Host ""
-    Write-Host "Usage:"
-    Write-Host "Sched-Collect -Logs"
-    Write-Host "  Collects dumps, logs, registry keys, command outputs"
-    Write-Host ""
-    Write-Host "Sched-Collect -Trace [-StartAt <YYYYMMDD-HHMMSS>] [-Duration <seconds>]"
-    Write-Host "  Collects live trace"
-    Write-Host ""
-    Write-Host "Sched-Collect -Logs -Trace"
-    Write-Host "  Collects live trace then -Logs data"
-    Write-Host ""
-    Write-Host "Parameters for -Trace"
-    Write-Host "  -StartAt : Will start the trace at the specified date/time"
-    Write-Host "  -Duration : Stops the trace after the specified numner of seconds"
-    exit
+  Write-Host "$version, a data collection tool for Task Scheduler troubleshooting"
+  Write-Host ""
+  Write-Host "Usage:"
+  Write-Host "Sched-Collect -Logs"
+  Write-Host "  Collects dumps, logs, registry keys, command outputs"
+  Write-Host ""
+  Write-Host "Sched-Collect -Trace [-StartAt <YYYYMMDD-HHMMSS>] [-Duration <seconds>]"
+  Write-Host "  Collects live trace"
+  Write-Host ""
+  Write-Host "Sched-Collect -Logs -Trace"
+  Write-Host "  Collects live trace then -Logs data"
+  Write-Host ""
+  Write-Host "Parameters for -Trace"
+  Write-Host "  -StartAt : Will start the trace at the specified date/time"
+  Write-Host "  -Duration : Stops the trace after the specified numner of seconds"
+  Write-Host "  -Auth : Adds many authentication related tracing providers to the main trace"
+  exit
 }
 
 if ($Trace -and $StartAt) {
   try {
-    $DateStart = Get-Date -Year $StartAt.Substring(0,4) -Month $StartAt.Substring(4,2) -Day $StartAt.Substring(6,2) -Hour $StartAt.Substring(9,2) -Minute $StartAt.Substring(11,2) -Second $StartAt.Substring(13,2)
+    $DateStart = Get-Date -Year $StartAt.Substring(0, 4) -Month $StartAt.Substring(4, 2) -Day $StartAt.Substring(6, 2) -Hour $StartAt.Substring(9, 2) -Minute $StartAt.Substring(11, 2) -Second $StartAt.Substring(13, 2)
     Write-Host $DateStart
   }
   catch {
@@ -128,9 +161,10 @@ Write-Log $version
 if ($AcceptEula) {
   Write-Log "AcceptEula switch specified, silently continuing"
   $eulaAccepted = ShowEULAIfNeeded "Sched-Collect" 2
-} else {
+}
+else {
   $eulaAccepted = ShowEULAIfNeeded "Sched-Collect" 0
-  if($eulaAccepted -ne "Yes") {
+  if ($eulaAccepted -ne "Yes") {
     Write-Log "EULA declined, exiting"
     exit
   }
@@ -150,7 +184,8 @@ $pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32
 if ($pidsvc) {
   Write-Log "Collecting dump of the svchost process hosting the Schedule service"
   CreateProcDump $pidsvc $global:resDir "scvhost-Schedule"
-} else {
+}
+else {
   Write-Log "Schedule service PID not found"
 }
 
@@ -158,7 +193,8 @@ $pidsvc = (ExecQuery -Namespace "root\cimv2" -Query "select ProcessID from win32
 if ($pidsvc) {
   Write-Log "Collecting dump of the svchost process hosting the System Events Broker service"
   CreateProcDump $pidsvc $global:resDir "scvhost-SystemEventsBroker"
-} else {
+}
+else {
   Write-Log "System Events Broker service PID not found"
 }
 
@@ -168,14 +204,14 @@ if ($pidsvc) {
 Write-Log "Exporting tasks information"
 
 $tbTasks = New-Object system.Data.DataTable
-$col = New-Object system.Data.DataColumn Path,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Name,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Enabled,([boolean]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn State,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn LastRunTime,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn LastResult,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn NextRunTime,([string]); $tbTasks.Columns.Add($col)
-$col = New-Object system.Data.DataColumn Maintenance,([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Path, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Name, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Enabled, ([boolean]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn State, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn LastRunTime, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn LastResult, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn NextRunTime, ([string]); $tbTasks.Columns.Add($col)
+$col = New-Object system.Data.DataColumn Maintenance, ([string]); $tbTasks.Columns.Add($col)
 
 $tasks = Get-ScheduledTask
 foreach ($task in $tasks) {
@@ -192,7 +228,8 @@ foreach ($task in $tasks) {
   $row.NextRunTime = $info.NextRunTime
   if ($task.Settings.MaintenanceSettings) {
     $row.Maintenance = "Yes" 
-  } else {
+  }
+  else {
     $row.Maintenance = "No" 
   } 
   $tbTasks.Rows.Add($row)
@@ -206,15 +243,15 @@ Write-Log "Copying C:\Windows\System32\Tasks"
 Copy-Item "C:\Windows\System32\Tasks" -Recurse ($global:resDir + "\System32-Tasks")
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"
-$cmd = "reg export ""HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"" """+ $global:resDir + "\Schedule.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "reg export ""HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Schedule"" """ + $global:resDir + "\Schedule.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Notifications\Data"
-$cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Notifications\Data"" """+ $global:resDir + "\NotificationsData.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Notifications\Data"" """ + $global:resDir + "\NotificationsData.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Invoke-Expression $cmd
 
 Write-Log "Exporting registry key HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State"
-$cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State"" """+ $global:resDir + "\SetupState.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "reg export ""HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State"" """ + $global:resDir + "\SetupState.reg.txt"" /y >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Invoke-Expression $cmd
 
 ExpRegFeatureManagement
@@ -223,25 +260,25 @@ Invoke-CustomCommand -Command "WHOAMI /all" -DestinationFile "WHOAMI.txt"
 Invoke-CustomCommand -Command "cmdkey /list" -DestinationFile "cmdkeyList.txt"
 
 Write-Log "Exporting Application log"
-$cmd = "wevtutil epl Application """+ $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "wevtutil epl Application """ + $global:resDir + "\" + $env:computername + "-Application.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "Application"
 
 Write-Log "Exporting System log"
-$cmd = "wevtutil epl System """+ $global:resDir + "\" + $env:computername + "-System.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "wevtutil epl System """ + $global:resDir + "\" + $env:computername + "-System.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "System"
 
 Write-Log "Exporting TaskScheduler/Maintenance log"
-$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Maintenance """+ $global:resDir + "\" + $env:computername + "-TaskScheduler-Maintenance.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Maintenance """ + $global:resDir + "\" + $env:computername + "-TaskScheduler-Maintenance.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "TaskScheduler-Maintenance"
 
 Write-Log "Exporting TaskScheduler/Operational log"
-$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Operational """+ $global:resDir + "\" + $env:computername + "-TaskScheduler-Operational.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
+$cmd = "wevtutil epl Microsoft-Windows-TaskScheduler/Operational """ + $global:resDir + "\" + $env:computername + "-TaskScheduler-Operational.evtx"" >>""" + $global:outfile + """ 2>>""" + $global:errfile + """"
 Write-Log $cmd
 Invoke-Expression $cmd
 ArchiveLog "TaskScheduler-Operational"
@@ -289,13 +326,14 @@ if (ListProcsAndSvcs) {
   $cmd = "gpresult /r >""" + $global:resDir + "\gpresult.txt""" + $RdrErr
   Write-Log $cmd
   Invoke-Expression ($cmd) | Out-File -FilePath $global:outfile -Append
-} else {
+}
+else {
   Write-Log "WMI is not working"
-  $proc = Get-Process | Where-Object {$_.Name -ne "Idle"}
-  $proc | Format-Table -AutoSize -property id, name, @{N="WorkingSet";E={"{0:N0}" -f ($_.workingset/1kb)};a="right"},
-  @{N="VM Size";E={"{0:N0}" -f ($_.VirtualMemorySize/1kb)};a="right"},
-  @{N="Proc time";E={($_.TotalProcessorTime.ToString().substring(0,8))}}, @{N="Threads";E={$_.threads.count}},
-  @{N="Handles";E={($_.HandleCount)}}, StartTime, Path | 
+  $proc = Get-Process | Where-Object { $_.Name -ne "Idle" }
+  $proc | Format-Table -AutoSize -property id, name, @{N = "WorkingSet"; E = { "{0:N0}" -f ($_.workingset / 1kb) }; a = "right" },
+  @{N = "VM Size"; E = { "{0:N0}" -f ($_.VirtualMemorySize / 1kb) }; a = "right" },
+  @{N = "Proc time"; E = { ($_.TotalProcessorTime.ToString().substring(0, 8)) } }, @{N = "Threads"; E = { $_.threads.count } },
+  @{N = "Handles"; E = { ($_.HandleCount) } }, StartTime, Path | 
   Out-String -Width 300 | Out-File -FilePath ($global:resDir + "\processes.txt")
   CollectSystemInfoNoWMI
 }
