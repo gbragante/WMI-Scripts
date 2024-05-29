@@ -89,7 +89,16 @@ Function WMITraceCapture {
       break
     }
   }
-  #Invoke-CustomCommand ("logman create trace 'wmi-trace' -ow -o '" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.etl" + "' -p 'Microsoft-Windows-WMI' 0xffffffffffffffff 0xff -nb 16 16 -bs 1024 -mode Circular -f bincirc -max 4096 -ets")
+
+  if (((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuildNumber) -ge 26063) {
+    $cmd = "winmgmt /dumptasks arb 1 LogFile:""" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.arb.txt""" + $RdrErr
+    Write-Log $cmd
+    $scriptBlock = {
+      param ($cmd)
+      Invoke-Expression ($cmd)
+    }
+    $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $cmd
+  }
 
   Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
 
@@ -211,6 +220,11 @@ Function WMITraceCapture {
   Invoke-CustomCommand "tasklist /svc" -DestinationFile "Traces\tasklist-$env:COMPUTERNAME.txt"
   if ($WPR) {
     Invoke-CustomCommand ("wpr -stop '"+ $TracesDir + $env:COMPUTERNAME + "_GenProf.etl'")
+  }
+
+  if (((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuildNumber) -ge 26063) {
+    Write-Log "Ensuring arb export is complete"
+    $job | Wait-Job | Out-Null
   }
 }
 
@@ -513,11 +527,11 @@ FileVersion -Filepath ($env:windir + "\system32\wbem\WmiApRpl.dll") -Log $true
 if (((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuildNumber) -ge 26063) {
   $cmd = "winmgmt /dumptasks arb 1 LogFile:""" + $global:resDir + "\Arb.txt""" + $RdrErr
   Write-Log $cmd
-  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+  Invoke-Expression ($cmd)
 
   $cmd = "winmgmt /dumptasks ess 1 LogFile:""" + $global:resDir + "\Ess.txt""" + $RdrErr
   Write-Log $cmd
-  Invoke-Expression ($cmd) | Out-File -FilePath $outfile -Append
+  Invoke-Expression ($cmd)
 }
 
 Write-Log "Collecting details about running processes"
