@@ -18,7 +18,7 @@ param( [string]$DataPath, `
        [switch]$Kernel
      )
 
-$version = "WMI-Collect (20240514)"
+$version = "WMI-Collect (20240530)"
 # by Gianni Bragante - gbrag@microsoft.com
 
 $DiagVersion = "WMI-RPC-DCOM-Diag (20230309)"
@@ -97,7 +97,8 @@ Function WMITraceCapture {
       param ($cmd)
       Invoke-Expression ($cmd)
     }
-    $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $cmd
+    Write-Log "Submitting ArbDumpJob"
+    $job = Start-Job -Name "ArbDumpJob" -ScriptBlock $scriptBlock -ArgumentList $cmd
   }
 
   Invoke-CustomCommand "logman update trace 'wmi-trace' -p '{1418EF04-B0B4-4623-BF7E-D74AB47BBDAA}' 0xffffffffffffffff 0xff -ets" # WMI-Activity
@@ -223,8 +224,8 @@ Function WMITraceCapture {
   }
 
   if (((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuildNumber) -ge 26063) {
-    Write-Log "Ensuring arb export is complete"
-    $job | Wait-Job | Out-Null
+    Write-Log "Ensuring ArbDumpJob is no longer running"
+    Wait-Job -Name "ArbDumpJob"| Out-Null
   }
 }
 
