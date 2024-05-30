@@ -94,8 +94,7 @@ Function WMITraceCapture {
     $cmd = "winmgmt /dumptasks arb 1 LogFile:""" + $TracesDir + "WMI-Trace-$env:COMPUTERNAME.arb.txt""" + $RdrErr
     Write-Log $cmd
     $scriptBlock = {
-      param ($cmd)
-      Invoke-Expression ($cmd)
+      Invoke-Expression ($using:cmd)
     }
     Write-Log "Submitting ArbDumpJob"
     $job = Start-Job -Name "ArbDumpJob" -ScriptBlock $scriptBlock -ArgumentList $cmd
