@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20240529
+# WMIRPC-TraceParse - 20240530
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName = "E:\customers\Lab\20240529-WIMI-TraceParse\WMI-Results-WMI26080-20240529_133840\Traces\WMI-Trace-WMI26080-!FMT.txt",
+  [string] $FileName = "E:\customers\Lab\20240529-WIMI-TraceParse\WMI-Results-WMI26080-20240530_093822\Traces\wmi-trace-wmi26080-!FMT.txt",
   [switch] $SkipRpc
 )
 
@@ -198,6 +198,10 @@ Function Parse-Query {
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
+
+  if ($row.Operation -eq "ExecNotificationQuery" -and $ArbFileName) {
+    ParseExecNotificationQuery    
+  }
 }
 
 Function Parse-Query_ {
@@ -237,6 +241,23 @@ Function Parse-Query_ {
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
+
+  if ($row.Operation -eq "ExecNotificationQuery" -and $ArbFileName) {
+    ParseExecNotificationQuery    
+  }
+
+}
+
+Function ParseExecNotificationQuery {
+  $arbRow = $tbArb.NewRow()
+  $arbRow.StartTime= $row.Time
+  $arbRow.GroupOperationID = $row.GroupOperationID
+  $arbRow.NameSpace = $row.NameSpace
+  $arbRow.Query = $row.Query
+  $arbRow.UserName = $row.User
+  $arbRow.ClientMachine = $row.ClientMachine
+  $arbRow.ClientPID = $row.ClientPID
+  $tbArb.Rows.Add($arbRow)
 }
 
 Function Parse-StopOperationID {
@@ -284,6 +305,10 @@ Function Parse-StopOperationID {
         }
       }
     }
+    if ($ArbFileName -and $aOpId[0].Operation -eq "ExecNotificationQuery") {
+      $arbRow = $tbArb.Rows | Where-Object { $_.GroupOperationID -eq $aOpId[0].GroupOperationID }
+      $tbArb.Rows.Remove(($arbRow))
+    }
   }
 }
 
@@ -324,10 +349,11 @@ Function Parse-PollingArb {
   $row = $tbEvt.NewRow()
   $row.Time = $time
   $row.Operation = "Polling"
-  #$row.Namespace = (FindSep -FindIn $part -Left "'//./").ToLower().Replace("/","\")
-  $PollQuery = CleanQuery -InQuery (FindSep -FindIn $part -Left "query " -Right " in namespace").ToLower()
   $row.Duration = 0
   $row.GroupOperationID = FindSep -FindIn $part -Left " = " -Right ";"
+
+  $PollQuery = CleanQuery -InQuery (FindSep -FindIn $part -Left "query " -Right " in namespace").ToLower()
+
   $tbEvt.Rows.Add($row)
   $aArb = $tbArb.Select("GroupOperationID = '" + $row.GroupOperationID + "'")
   if ($aArb.Count -gt 0) { 
@@ -336,13 +362,18 @@ Function Parse-PollingArb {
     $row.User = $aArb[0].UserName
     $row.Query = $aArb[0].Query
     $row.Namespace= $aArb[0].Namespace
-    $Class = FindClass -InQuery $PollQuery
-    $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
-    if ($aProv.Count -gt 0) { 
-      $row.HostID = $aProv[0].HostID
-      $row.ProviderName = $aProv[0].ProviderName
-    }
+  } else {
+    $row.Query = $PollQuery
+    $row.NameSpace = (FindSep -FindIn $part -Left "//./").ToLower().Replace("/","\")
   }
+
+  $Class = FindClass -InQuery $PollQuery
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $row.HostID = $aProv[0].HostID
+    $row.ProviderName = $aProv[0].ProviderName
+  }
+
   Write-host $part
 }
 
