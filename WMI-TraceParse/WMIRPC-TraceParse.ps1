@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20240530
+# WMIRPC-TraceParse - 20240603
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName = "E:\customers\Lab\20240529-WIMI-TraceParse\WMI-Results-WMI26080-20240530_093822\Traces\wmi-trace-wmi26080-!FMT.txt",
+  [string] $FileName = "E:\customers\Lab\20240603-WIMI-TraceParse\TSS_WMI26080_240603-143014_\WMI26080_240603-143014_UEX_WMIBaseTrace-!FMT.txt",
   [switch] $SkipRpc
 )
 
@@ -362,6 +362,12 @@ Function Parse-PollingArb {
     $row.User = $aArb[0].UserName
     $row.Query = $aArb[0].Query
     $row.Namespace= $aArb[0].Namespace
+    if ($Kernel) {
+      $aProc = $tbProc.Select("PID = " + $row.ClientPID + " and Stop > '" + $row.Time + "'")
+      if ($aProc.Count -gt 0) {
+        $row.Process = $aProc[$aProc.Count-1].FileName
+      }
+    }
   } else {
     $row.Query = $PollQuery
     $row.NameSpace = (FindSep -FindIn $part -Left "//./").ToLower().Replace("/","\")
@@ -509,15 +515,9 @@ $KFileName = ""
 $bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
-  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()  # WMI-Collect naming convention
+  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()
   if (Test-Path($PerfFileName)) {
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName.Substring($PerfFileName.Length-12) -Left "-tz" -Right ".blg")
-  }
-  $ArbFileName =  Get-Item($fileobj.DirectoryName + "\wmi-trace*.arb.txt")
-  if ($ArbFileName) {
-    $ArbFileName = $ArbFileName.FullName.ToLower()
-  } else {
-    $ArbFileName = null
   }
 } else {
   $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*_PerfMon_UEX_WMIPrvSE_*.blg")).FullName).ToLower() 
@@ -525,6 +525,14 @@ if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for W
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName -Left "_tz" -Right "_")
   }
 }
+
+$ArbFileName =  Get-Item($fileobj.DirectoryName + "\*.arb.txt")
+if ($ArbFileName) {
+  $ArbFileName = $ArbFileName.FullName.ToLower()
+} else {
+  $ArbFileName = null
+}
+
 $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
 $perfOffset = $perfFileOffset - $machineOffset
 Write-host ("Performance counters offset = " + $perfOffset + " minutes")
