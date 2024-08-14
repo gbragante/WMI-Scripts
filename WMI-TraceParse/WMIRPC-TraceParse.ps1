@@ -1,4 +1,4 @@
-# WMIRPC-TraceParse - 20230720
+# WMIRPC-TraceParse - 20240814
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
@@ -198,6 +198,10 @@ Function Parse-Query {
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
+
+  if ($row.Operation -eq "ExecNotificationQuery" -and $ArbFileName) {
+    ParseExecNotificationQuery    
+  }
 }
 
 Function Parse-Query_ {
@@ -237,6 +241,23 @@ Function Parse-Query_ {
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
   Write-host $part
+
+  if ($row.Operation -eq "ExecNotificationQuery" -and $ArbFileName) {
+    ParseExecNotificationQuery    
+  }
+
+}
+
+Function ParseExecNotificationQuery {
+  $arbRow = $tbArb.NewRow()
+  $arbRow.StartTime= $row.Time
+  $arbRow.GroupOperationID = $row.GroupOperationID
+  $arbRow.NameSpace = $row.NameSpace
+  $arbRow.Query = $row.Query
+  $arbRow.UserName = $row.User
+  $arbRow.ClientMachine = $row.ClientMachine
+  $arbRow.ClientPID = $row.ClientPID
+  $tbArb.Rows.Add($arbRow)
 }
 
 Function Parse-StopOperationID {
@@ -284,6 +305,10 @@ Function Parse-StopOperationID {
         }
       }
     }
+    if ($ArbFileName -and $aOpId[0].Operation -eq "ExecNotificationQuery") {
+      $arbRow = $tbArb.Rows | Where-Object { $_.GroupOperationID -eq $aOpId[0].GroupOperationID }
+      $tbArb.Rows.Remove(($arbRow))
+    }
   }
 }
 
@@ -317,6 +342,44 @@ Function Parse-Polling {
   $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
+  Write-host $part
+}
+
+Function Parse-PollingArb {
+  $row = $tbEvt.NewRow()
+  $row.Time = $time
+  $row.Operation = "Polling"
+  $row.Duration = 0
+  $row.GroupOperationID = FindSep -FindIn $part -Left " = " -Right ";"
+
+  $PollQuery = CleanQuery -InQuery (FindSep -FindIn $part -Left "query " -Right " in namespace").ToLower()
+
+  $tbEvt.Rows.Add($row)
+  $aArb = $tbArb.Select("GroupOperationID = '" + $row.GroupOperationID + "'")
+  if ($aArb.Count -gt 0) { 
+    $row.ClientMachine = $aArb[0].ClientMachine
+    $row.ClientPID = $aArb[0].ClientPID
+    $row.User = $aArb[0].UserName
+    $row.Query = $aArb[0].Query
+    $row.Namespace= $aArb[0].Namespace
+    if ($Kernel) {
+      $aProc = $tbProc.Select("PID = " + $row.ClientPID + " and Stop > '" + $row.Time + "'")
+      if ($aProc.Count -gt 0) {
+        $row.Process = $aProc[$aProc.Count-1].FileName
+      }
+    }
+  } else {
+    $row.Query = $PollQuery
+    $row.NameSpace = (FindSep -FindIn $part -Left "//./").ToLower().Replace("/","\")
+  }
+
+  $Class = FindClass -InQuery $PollQuery
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $row.HostID = $aProv[0].HostID
+    $row.ProviderName = $aProv[0].ProviderName
+  }
+
   Write-host $part
 }
 
@@ -462,6 +525,14 @@ if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for W
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName -Left "_tz" -Right "_")
   }
 }
+
+$ArbFileName =  Get-Item($fileobj.DirectoryName + "\*.arb.txt")
+if ($ArbFileName) {
+  $ArbFileName = $ArbFileName.FullName.ToLower()
+} else {
+  $ArbFileName = null
+}
+
 $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
 $perfOffset = $perfFileOffset - $machineOffset
 Write-host ("Performance counters offset = " + $perfOffset + " minutes")
@@ -516,6 +587,57 @@ if ($PerfFileName) {
   }
 }
 
+if ($ArbFileName) {
+  $tbArb = New-Object system.Data.DataTable
+  $col = New-Object system.Data.DataColumn Task,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn TaskID,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn TaskType,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn StartTime,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn GroupOperationID,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn LastHeartbeat,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn Finalizer,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn OperationInfo,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn NameSpace,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn Query,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn UserName,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn ClientMachine,([string]); $tbArb.Columns.Add($col)
+  $col = New-Object system.Data.DataColumn ClientPID,([string]); $tbArb.Columns.Add($col)
+
+  $sr = new-object System.io.streamreader(get-item $ArbFileName)
+  $line = $sr.ReadLine()
+  while (-not $sr.EndOfStream) {
+    if ($line -match "---Task =") {
+      $row = $tbArb.NewRow()
+      $row.Task = FindSep -FindIn $line -Left " = " -Right " --"
+      $tbArb.Rows.Add($row)
+    } elseif ($line -match "Task ID         =") {
+      $row.TaskID = FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "Task Type = ") {
+      $row.TaskType = FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "Task Start time") {
+      $row.StartTime= FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "GroupOperationID = ") {
+      $row.GroupOperationID = FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "LastHeartbeat = ") {
+      $row.LastHeartbeat= FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "--Finalizer = ") {
+      $row.Finalizer= FindSep -FindIn $line -Left " = " -Right " ------"
+    } elseif ($line -match "OperationInfo = ") {
+      $row.OperationInfo = FindSep -FindIn $line -Left " = " -Right " - "
+      $row.NameSpace = FindSep -FindIn $line -Left " - " -Right " : "
+      $row.Query = FindSep -FindIn $line -Left " : "
+    } elseif ($line -match "User Name = ") {
+      $row.UserName = FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "Client Machine Name = ") {
+      $row.ClientMachine = FindSep -FindIn $line -Left " = "
+    } elseif ($line -match "Client ProcessID = ") {
+      $row.ClientPID = FindSep -FindIn $line -Left " = "
+    }
+    $line = $sr.ReadLine()
+  }
+}
+
+$tbArb | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".arb.csv") -noType
 $file = Get-Item $FileName
 $diagFile = $file.DirectoryName + "\" + $file.BaseName + ".diag.txt"
 
@@ -811,7 +933,11 @@ while (-not $sr.EndOfStream) {
     Write-Host $part
   }
   if ($part -match  "Executing polling query") { 
-    Parse-Polling
+    if (-not $ArbFileName) {
+      Parse-Polling
+    } else {
+      Parse-PollingArb
+    }
   }
 
   if (-not $SkipRpc -and $part -match  "\[Debug \]" -or $part -match  "\[Debug17 \]") { 
