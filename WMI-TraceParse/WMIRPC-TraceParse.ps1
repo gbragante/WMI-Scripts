@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20240814
+# WMIRPC-TraceParse - 20241004
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName,
+  [string] $FileName ="E:\customers\Lab\20241004-WMITrrace24H2\TSS_WS22SRV_241004-164236_\WS22SRV_241004-164236_UEX_WMIBaseTrace-!FMT.txt",
   [switch] $SkipRpc
 )
 
@@ -305,10 +305,12 @@ Function Parse-StopOperationID {
         }
       }
     }
-    if ($ArbFileName -and $aOpId[0].Operation -eq "ExecNotificationQuery") {
-      $arbRow = $tbArb.Rows | Where-Object { $_.GroupOperationID -eq $aOpId[0].GroupOperationID }
-      $tbArb.Rows.Remove(($arbRow))
-    }
+    # Remove the notification query from tbArb when it is terminated, this will not work until ths backport request is completed:
+    # [Ge] Backport request for Bug 51711782: [AB] WMI CESS Polling objects leak or linked data mess-up by later ess queries (terminated)
+    #if ($ArbFileName -and $aOpId[0].Operation -eq "ExecNotificationQuery") {
+    #  $arbRow = $tbArb.Rows | Where-Object { $_.GroupOperationID -eq $aOpId[0].GroupOperationID }
+    #  $tbArb.Rows.Remove(($arbRow))
+    #}
   }
 }
 
@@ -379,8 +381,24 @@ Function Parse-PollingArb {
     $row.HostID = $aProv[0].HostID
     $row.ProviderName = $aProv[0].ProviderName
   }
-
+  GetPollingResources
   Write-host $part
+}
+
+Function GetPollingResources {
+  if ($PerfWMIPrvSE) {
+    if ($row.HostID.GetType().Name -ne "DBNull") {
+      $tStart = (ToTime $row.Time)
+      $qry = "Time = '" + $tStart.ToString("20yyMMdd HHmmss") + "' and PID = '" + $row.HostID + "'"
+      $aPerf = $tbPerf.Select($qry)
+      if ($aPerf) {
+        $row.CPU = $aPerf.CPU
+        $row.Memory = $aPerf.Memory
+        $row.Threads = $aPerf.Threads
+        $row.Handles = $aPerf.Handles
+      }
+    }
+  }
 }
 
 Function ProcessKernelTrace {
