@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20241004
+# WMIRPC-TraceParse - 20241007
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName ="E:\customers\Lab\20241004-WMITrrace24H2\TSS_WS22SRV_241004-164236_\WS22SRV_241004-164236_UEX_WMIBaseTrace-!FMT.txt",
+  [string] $FileName ="E:\customers\Lab\20241004-WMITrrace24H2\TSS_WS22SRV_241004-165422_\WS22SRV_241004-165422_UEX_WMIBaseTrace-!FMT.txt",
   [switch] $SkipRpc
 )
 
@@ -533,13 +533,15 @@ $KFileName = ""
 $bRPC = $false
 $fileobj = Get-Item $FileName
 if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for WMI-Collect
-  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")).FullName).ToLower()  # WMI-Collect naming convention
-  if (Test-Path($PerfFileName)) {
+  $PerfFileName = Get-Item($fileobj.DirectoryName + "\*-trace-PerfMonWMIPrvSE-*.blg")  # WMI-Collect naming convention
+  if ($PerfFileName) {
+    $PerfFileName = $PerfFileName.FullName.ToLower()
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName.Substring($PerfFileName.Length-12) -Left "-tz" -Right ".blg")
   }
 } else {
-  $PerfFileName = ((Get-Item($fileobj.DirectoryName + "\*_PerfMon_UEX_WMIPrvSE_*.blg")).FullName).ToLower()  # TSS naming convention
-  if (Test-Path($PerfFileName)) {
+  $PerfFileName = Get-Item($fileobj.DirectoryName + "\*_PerfMon_UEX_WMIPrvSE_*.blg") # TSS naming convention
+  if ($PerfFileName) {
+    $PerfFileName = $PerfFileName.FullName.ToLower()
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName -Left "_tz" -Right "_")
   }
 }
@@ -548,7 +550,7 @@ $ArbFileName =  Get-Item($fileobj.DirectoryName + "\*.arb.txt")
 if ($ArbFileName) {
   $ArbFileName = $ArbFileName.FullName.ToLower()
 } else {
-  $ArbFileName = null
+  $ArbFileName = $null
 }
 
 $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
@@ -593,16 +595,14 @@ if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for W
 }
 
 if ($PerfFileName) {
-  if (Test-Path ($PerfFileName)) {
-    Write-Host ("Found WMIPrvSE performance trace at " + $PerfFileName)
-    Write-Host ("relog """ + $PerfFileName + """ -f blg -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y")
-    Invoke-Expression ("relog """ + $PerfFileName + """ -f csv -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y") | Out-Null
-    $PerfWMIPrvSE = $true
-    $PerfFileName = $PerfFileName.Replace(".blg", ".csv")
-  } else {
-    Write-Host "WMIPrvSE performance trace not found"
-    $PerfWMIPrvSE = $false
-  }
+  Write-Host ("Found WMIPrvSE performance trace at " + $PerfFileName)
+  Write-Host ("relog """ + $PerfFileName + """ -f blg -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y")
+  Invoke-Expression ("relog """ + $PerfFileName + """ -f csv -o """ + $PerfFileName.Replace(".blg", ".csv") + """ -y") | Out-Null
+  $PerfWMIPrvSE = $true
+  $PerfFileName = $PerfFileName.Replace(".blg", ".csv")
+} else {
+  Write-Host "WMIPrvSE performance trace not found"
+  $PerfWMIPrvSE = $false
 }
 
 if ($ArbFileName) {
@@ -653,9 +653,9 @@ if ($ArbFileName) {
     }
     $line = $sr.ReadLine()
   }
+  $tbArb | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".arb.csv") -noType
 }
 
-$tbArb | Export-Csv ($fileobj.DirectoryName + "\" + $fileobj.BaseName + ".arb.csv") -noType
 $file = Get-Item $FileName
 $diagFile = $file.DirectoryName + "\" + $file.BaseName + ".diag.txt"
 
