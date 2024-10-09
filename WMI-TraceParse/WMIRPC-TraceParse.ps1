@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20241007
+# WMIRPC-TraceParse - 20241009
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName ="E:\customers\Lab\20241004-WMITrrace24H2\TSS_WS22SRV_241004-165422_\WS22SRV_241004-165422_UEX_WMIBaseTrace-!FMT.txt",
+  [string] $FileName = "E:\customers\Lab\20241009-WMITracePolling\W16SRV_241009-093803_UEX_WMIBaseTrace-!FMT.txt",
   [switch] $SkipRpc
 )
 
@@ -344,6 +344,14 @@ Function Parse-Polling {
   $row.Query = CleanQuery -InQuery (FindSep -FindIn $part -Left "query '" -Right "'").ToLower()
   $row.Duration = 0
   $tbEvt.Rows.Add($row)
+
+  $Class = FindClass -InQuery $row.Query 
+  $aProv = $tbProvClass.Select("Class = '" + $Class + "'")
+  if ($aProv.Count -gt 0) { 
+    $row.HostID = $aProv[0].HostID
+    $row.ProviderName = $aProv[0].ProviderName
+  }
+  GetPollingResources
   Write-host $part
 }
 
@@ -544,13 +552,10 @@ if ($fileobj.Basename.ToLower().Contains("-trace")) {  # naming convention for W
     $PerfFileName = $PerfFileName.FullName.ToLower()
     $perfFileOffset = [int](FindSep -FindIn $PerfFileName -Left "_tz" -Right "_")
   }
-}
-
-$ArbFileName =  Get-Item($fileobj.DirectoryName + "\*.arb.txt")
-if ($ArbFileName) {
-  $ArbFileName = $ArbFileName.FullName.ToLower()
-} else {
-  $ArbFileName = $null
+  $ArbFileName =  Get-Item((FindSep -FindIn $fileobj.FullName -Left "" -Right "-!FMT") + ".arb.txt") -ErrorAction SilentlyContinue
+  if ($ArbFileName) {
+    $ArbFileName = $ArbFileName.FullName.ToLower()
+  }
 }
 
 $machineOffset = ((Get-Date) - (Get-Date).ToUniversalTime()).TotalMinutes
