@@ -1,8 +1,8 @@
-# WMIRPC-TraceParse - 20241009
+# WMIRPC-TraceParse - 20241031
 # by Gianni Bragante - gbrag@microsoft.com
 
 param (
-  [string] $FileName = "E:\customers\Lab\20241009-WMITracePolling\W16SRV_241009-093803_UEX_WMIBaseTrace-!FMT.txt",
+  [string] $FileName,
   [switch] $SkipRpc
 )
 
